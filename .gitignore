@@ -41,3 +41,6 @@ temp_test/
 *.wav
 *.avi
 *.mkv
+
+# Backup folder for obsolete code
+_backup_obsoletos/

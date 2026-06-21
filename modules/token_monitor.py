@@ -71,7 +71,6 @@ def obtener_estado_cuotas():
     estado = {
         "provider": provider,
         "gemini": [],
-        "ollama": [],
         "rapidapi": "Desconocido",
         "reinicio_en": ""
     }

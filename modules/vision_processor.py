@@ -39,39 +39,18 @@ def analizar_lote(lote_imagenes, tipo_manga):
         modelo = api_config.nombre_modelo_vision()
         
         try:
-            if provider == "ollama":
-                import ollama
-                
-                # Ollama espera imágenes en bytes para visión (o rutas, pero bytes es más seguro para moondream en python lib)
-                images_bytes = []
-                for ruta in lote_imagenes:
-                    if os.path.exists(ruta):
-                        with open(ruta, "rb") as img_file:
-                            images_bytes.append(img_file.read())
-                
-                if not images_bytes:
-                    return "Error: No se pudieron leer las imágenes para Ollama."
-
-                response = ollama.generate(
-                    model=modelo,
-                    prompt=instruccion,
-                    images=images_bytes,
-                    stream=False
-                )
-                return response['response']
-            else:
-                client = api_config.obtener_cliente_gemini()
-                # Preparamos el contenido multimodal: instrucciones + lista de imágenes PIL
-                contenidos = [instruccion]
-                for ruta in lote_imagenes:
-                    img = Image.open(ruta)
-                    contenidos.append(img)
-                
-                response = client.models.generate_content(
-                    model=modelo,
-                    contents=contenidos
-                )
-                return response.text
+            client = api_config.obtener_cliente_gemini()
+            # Preparamos el contenido multimodal: instrucciones + lista de imágenes PIL
+            contenidos = [instruccion]
+            for ruta in lote_imagenes:
+                img = Image.open(ruta)
+                contenidos.append(img)
+            
+            response = client.models.generate_content(
+                model=modelo,
+                contents=contenidos
+            )
+            return response.text
                 
         except Exception as e:
             error_str = str(e)
@@ -178,23 +157,13 @@ def generar_guion_capitulo(chapter_id, info_progreso=""):
     while intentos < 5:
         modelo = api_config.nombre_modelo_ia()
         try:
-            if provider == "ollama":
-                import ollama
-                response = ollama.generate(
-                    model=modelo,
-                    prompt=prompt_resumen,
-                    stream=False
-                )
-                print(f"[+] Guion final generado con Ollama ({modelo}).")
-                return response['response']
-            else:
-                client = api_config.obtener_cliente_gemini()
-                response = client.models.generate_content(
-                    model=modelo,
-                    contents=prompt_resumen
-                )
-                print(f"[+] Guion final generado con Gemini ({modelo}).")
-                return response.text
+            client = api_config.obtener_cliente_gemini()
+            response = client.models.generate_content(
+                model=modelo,
+                contents=prompt_resumen
+            )
+            print(f"[+] Guion final generado con Gemini ({modelo}).")
+            return response.text
         except Exception as e:
             error_str = str(e)
             if provider == "gemini" and ("429" in error_str or "RESOURCE_EXHAUSTED" in error_str):
