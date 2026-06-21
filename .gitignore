@@ -1,0 +1,43 @@
+# Byte-compiled / optimized / DLL support
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables & Credentials
+.env
+client_secrets.json
+token.json
+*token*.json
+*secrets*.json
+*credentials*.json
+
+# Local Databases
+database/*.db
+database/*.sqlite3
+
+# Large asset and download directories
+pdf_storage/
+raw_downloads/
+outputs/
+temp/
+temp_test/
+
+# Document & PDF files
+*.pdf
+
+# Image files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.webp
+*.tiff
+
+# Audio & Video files
+*.mp4
+*.mp3
+*.wav
+*.avi
+*.mkv

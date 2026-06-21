@@ -1,0 +1,1972 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexFlow Manga Studio</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #09090b;
+            --surface-1: #18181b;
+            --surface-2: #27272a;
+            --border-color: #3f3f46;
+            --primary: #8b5cf6; /* Purple */
+            --primary-hover: #7c3aed;
+            --secondary: #3b82f6; /* Blue */
+            --danger: #f43f5e;
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Navigation */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 2rem;
+            background: rgba(24, 24, 27, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 50;
+        }
+
+        h1 {
+            font-weight: 800;
+            font-size: 1.5rem;
+            background: linear-gradient(to right, var(--secondary), var(--primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .system-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            background: var(--surface-2);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #22c55e;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #22c55e;
+        }
+
+        /* Main Layout */
+        .layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar - Workflows */
+        .sidebar-flows {
+            width: 280px;
+            background: var(--surface-1);
+            border-right: 1px solid var(--border-color);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+        }
+
+        .btn-flow {
+            background: var(--surface-2);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 1rem;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn-flow:hover {
+            background: #3f3f46;
+            transform: translateX(4px);
+            border-color: var(--text-muted);
+        }
+
+        .btn-flow.gradient {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border: none;
+            color: white;
+            font-weight: 600;
+        }
+
+        .btn-flow.gradient:hover {
+            background: linear-gradient(135deg, var(--primary-hover), #2563eb);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+        }
+
+        /* Middle Panel - File Explorer */
+        .explorer {
+            width: 320px;
+            background: var(--surface-1);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .explorer-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        select.manga-select {
+            width: 100%;
+            padding: 0.8rem;
+            background: var(--surface-2);
+            border: 1px solid var(--border-color);
+            color: white;
+            border-radius: 8px;
+            outline: none;
+            cursor: pointer;
+            font-size: 0.95rem;
+            appearance: none;
+        }
+
+        .chapter-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .chapter-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0.8rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .chapter-item:hover {
+            background: var(--surface-2);
+        }
+
+        .chapter-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.3);
+            color: var(--secondary);
+        }
+
+        /* Custom Checkbox */
+        input[type="checkbox"] {
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--text-muted);
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s;
+        }
+        input[type="checkbox"]:checked {
+            background: var(--secondary);
+            border-color: var(--secondary);
+        }
+        input[type="checkbox"]:checked::after {
+            content: "✓";
+            position: absolute;
+            color: white;
+            font-size: 12px;
+            top: -1px;
+            left: 3px;
+        }
+
+        /* PDF Actions */
+        .pdf-actions {
+            padding: 1rem;
+            background: var(--surface-2);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .btn-pdf {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 0.8rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            text-align: center;
+        }
+        .btn-pdf:hover {
+            background: #2563eb;
+        }
+
+        /* Right Panel - Gallery */
+        .gallery-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-dark);
+            overflow: hidden;
+        }
+
+        .gallery-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .gallery-body {
+            flex: 1;
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+        }
+
+        .gallery-grid {
+            flex: 1;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 2rem;
+            overflow-y: auto;
+        }
+
+        /* Preview Panel */
+        .preview-panel {
+            width: 400px;
+            background: var(--surface-1);
+            border-left: 1px solid var(--border-color);
+            display: none;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .preview-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .preview-header h3 {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .preview-header button {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1.2rem;
+            transition: color 0.2s;
+        }
+
+        .preview-header button:hover {
+            color: white;
+        }
+
+        .preview-content {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .preview-content img {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .image-card {
+            background: var(--surface-1);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            position: relative;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .image-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--text-muted);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 640px;
+            object-fit: cover;
+            object-position: top;
+            display: block;
+            background: #000;
+            cursor: pointer;
+        }
+
+        .image-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(0,0,0,0.95));
+            padding: 1.5rem 1rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .image-card:hover .image-overlay {
+            opacity: 1;
+        }
+
+        .image-name {
+            font-size: 0.85rem;
+            color: #e4e4e7;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .delete-btn {
+            background: rgba(244, 63, 94, 0.2);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            padding: 0.6rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .delete-btn:hover {
+            background: var(--danger);
+            color: white;
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--border-color); }
+
+        .loader {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+            gap: 1rem;
+        }
+        .empty-state svg { width: 64px; height: 64px; opacity: 0.5; }
+
+        /* Library CSS */
+        .library-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 2rem;
+            width: 100%;
+        }
+        .library-card {
+            background: var(--surface-1);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            display: block;
+            min-height: max-content;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        .library-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--text-muted);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.5);
+        }
+        .library-card-img-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 2 / 3;
+            background: #000;
+            overflow: hidden;
+        }
+        .library-card-img-container img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+        .library-card:hover .library-card-img-container img {
+            transform: scale(1.05);
+        }
+        .library-badge-type {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(9, 9, 11, 0.85);
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border: 1px solid var(--border-color);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .library-badge-status {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(9, 9, 11, 0.85);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .library-card-content {
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            gap: 12px;
+        }
+        .library-manga-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: white;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .library-progress-container {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .library-progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: var(--surface-2);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .library-progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--secondary), var(--primary));
+            border-radius: 3px;
+            transition: width 0.5s ease-in-out;
+        }
+        .library-summary {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            height: 4.5em;
+        }
+        .library-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: auto;
+            border-top: 1px solid var(--border-color);
+            padding-top: 12px;
+        }
+
+        /* Log Console CSS */
+        .log-console {
+            height: 200px;
+            background: #050507;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: text;
+        }
+        .log-console-header {
+            background: var(--surface-1);
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+            height: 35px;
+        }
+        .log-console-output {
+            flex: 1;
+            padding: 12px 16px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.8rem;
+            color: #d4d4d8;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            background: #070709;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Manga Studio <span style="font-weight:300; color:#71717a">v3.0</span></h1>
+        <div class="system-status">
+            <div class="status-dot"></div>
+            <span id="global-status">Sistema en línea</span>
+        </div>
+    </header>
+
+    <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar-flows">
+            <div class="section-title">Pipelines Principales</div>
+            
+            <button class="btn-flow" onclick="openSearchModal()">
+                📥 1. Buscar y Descargar Manga
+            </button>
+            <button class="btn-flow" onclick="showLibrary()">
+                📚 2. Mi Biblioteca
+            </button>
+            <button class="btn-flow" onclick="showCommentsView()" style="position: relative;">
+                💬 3. Centro de Comentarios
+                <span id="unread-comment-badge" style="display: none; position: absolute; top: -5px; right: -5px; background: var(--danger); color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 0.75rem; font-weight: 700; align-items: center; justify-content: center; box-shadow: 0 0 8px var(--danger);">0</span>
+            </button>
+            <button class="btn-flow" onclick="runFlow(3)">
+                🎬 4. Motor Producción
+                <div class="loader" id="loader-3"></div>
+            </button>
+            <button class="btn-flow gradient" onclick="runFlow(4)">
+                🚀 5. Auto-Pilot (End-to-End)
+                <div class="loader" id="loader-4"></div>
+            </button>
+            
+            <div class="section-title" style="margin-top: 1rem;">Mantenimiento</div>
+            <button class="btn-flow" onclick="runFlow(5)">
+                📊 6. Revisar Cuotas API
+                <div class="loader" id="loader-5"></div>
+            </button>
+        </aside>
+
+        <!-- Explorer -->
+        <div class="explorer">
+            <div class="explorer-header">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    Navegador de Archivos
+                    <button onclick="loadMangas()" style="background: none; border: none; color: var(--secondary); cursor: pointer;" title="Recargar lista">🔄</button>
+                </div>
+                <select class="manga-select" id="mangaSelect" onchange="loadChapters()">
+                    <option value="">Selecciona un manga...</option>
+                </select>
+            </div>
+            
+            <div class="pdf-actions">
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer;">
+                    <input type="checkbox" id="selectAllChapters" onchange="toggleAllChapters()">
+                    Seleccionar Todos los Capítulos
+                </label>
+                <button class="btn-pdf" onclick="convertSelectedToPdf()">
+                    📄 Convertir a PDF
+                </button>
+            </div>
+
+            <div class="chapter-list" id="chapterList">
+                <div style="text-align:center; color:#71717a; margin-top:20px; font-size:0.9rem">
+                    Selecciona un manga para ver sus capítulos
+                </div>
+            </div>
+        </div>
+
+        <!-- Gallery -->
+        <main class="gallery-container">
+            <div class="gallery-header">
+                <h2 style="font-size: 1.1rem; font-weight: 500;" id="galleryTitle">Imágenes del Capítulo</h2>
+                <div style="display: flex; gap: 15px; align-items: center;">
+                    <button id="showDashboardBtn" onclick="showMangaDashboard()" style="display: none; padding: 0.5rem 1rem; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: 600; font-size: 0.9rem; align-items: center; gap: 6px;">🎬 Ver Siguiente Video</button>
+                    <button id="undoBtn" onclick="undoDelete()" style="display: none; padding: 0.5rem 1rem; background: var(--surface-2); color: white; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: 0.2s;">↩️ Deshacer Borrado</button>
+                    <div id="galleryCount" style="color: var(--text-muted); font-size: 0.9rem;">0 archivos</div>
+                </div>
+            </div>
+            
+            <div class="gallery-body">
+                <div class="gallery-grid" id="gallery">
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <p>Haz clic en un capítulo para ver sus imágenes (.webp, .png, .jpg)</p>
+                    </div>
+                </div>
+                
+                <!-- Library View -->
+                <div id="libraryView" class="library-grid" style="flex: 1; padding: 2rem; display: none; overflow-y: auto; background: var(--bg-dark);">
+                    <!-- Se carga dinámicamente -->
+                </div>
+
+                <!-- Comments View -->
+                <div id="commentsView" style="flex: 1; display: none; flex-direction: row; overflow: hidden; background: var(--bg-dark);">
+                    <!-- Left Column: Comments List -->
+                    <div style="width: 380px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; overflow: hidden; background: var(--surface-1);">
+                        <div style="padding: 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                            <h3 style="font-size: 1.1rem; font-weight: 700;">Comentarios Recientes</h3>
+                            <button class="btn-flow gradient" onclick="syncComments()" style="padding: 0.5rem 1rem; font-size: 0.85rem; border-radius: 6px; display: flex; align-items: center; gap: 6px; height: 32px; justify-content: center; width: auto;">
+                                🔄 Sincronizar
+                            </button>
+                        </div>
+                        <div id="commentsList" style="flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 10px;">
+                            <div style="text-align: center; color: var(--text-muted); padding-top: 20px;">Cargando comentarios...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right Column: Detail / Review Panel -->
+                    <div id="commentDetailPanel" style="flex: 1; padding: 2.5rem; display: flex; flex-direction: column; gap: 1.5rem; overflow-y: auto;">
+                        <div class="empty-state" id="commentDetailEmpty">
+                            <span style="font-size: 3rem;">💬</span>
+                            <p>Selecciona un comentario para revisarlo y ver su video asociado.</p>
+                        </div>
+                        <div id="commentDetailContent" style="display: none; flex-direction: column; gap: 1.8rem;">
+                            <!-- Header with Author Info -->
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                                <div>
+                                    <h3 id="detailAuthor" style="font-size: 1.3rem; font-weight: 800; color: white;">Autor</h3>
+                                    <span id="detailDate" style="font-size: 0.85rem; color: var(--text-muted);">Fecha</span>
+                                </div>
+                                <button class="btn-flow gradient" id="detailMarkReadBtn" style="padding: 0.6rem 1.2rem; font-size: 0.9rem; border-radius: 8px;">
+                                    ✓ Marcar como Leído
+                                </button>
+                            </div>
+                            
+                            <!-- Split Panel: Video on left, Comment & Manga on right -->
+                            <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                                <!-- Video Area -->
+                                <div style="flex: 1.3; min-width: 360px; display: flex; flex-direction: column; gap: 10px;">
+                                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Video del Short</div>
+                                    <div id="detailVideoContainer" style="position: relative; width: 100%; padding-top: 177.77%; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color); box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
+                                        <!-- Will embed video player -->
+                                    </div>
+                                </div>
+                                
+                                <!-- Content Area -->
+                                <div style="flex: 1.7; min-width: 320px; display: flex; flex-direction: column; gap: 1.5rem;">
+                                    <!-- Comment Text -->
+                                    <div style="background: var(--surface-1); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; display: flex; flex-direction: column; gap: 10px;">
+                                        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Comentario</div>
+                                        <p id="detailCommentText" style="font-size: 1.05rem; line-height: 1.5; color: white; font-style: italic; white-space: pre-wrap; word-break: break-word;"></p>
+                                    </div>
+                                    
+                                    <!-- Manga Card -->
+                                    <div id="detailMangaCard" style="background: var(--surface-1); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; display: flex; gap: 1.5rem; align-items: flex-start; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                                        <img id="detailMangaCover" src="" style="width: 110px; height: 160px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border-color);" alt="Manga Cover">
+                                        <div style="display: flex; flex-direction: column; gap: 8px; flex: 1;">
+                                            <h4 id="detailMangaTitle" style="font-size: 1.15rem; font-weight: 700; color: white;">Título del Manga</h4>
+                                            <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px;">
+                                                <div><strong>Estado:</strong> <span id="detailMangaStatus" style="text-transform: capitalize;"></span></div>
+                                                <div><strong>Capítulos Descargados:</strong> <span id="detailMangaChapters"></span></div>
+                                            </div>
+                                            <button id="detailDownloadBtn" class="btn-flow gradient" style="margin-top: 10px; width: 100%; justify-content: center; padding: 0.6rem; font-size: 0.85rem; gap: 6px;">
+                                                📥 Continuar Descarga de Restantes
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Manga Dashboard & Video Preview -->
+                <div id="mangaDashboard" style="flex: 1; padding: 2rem; display: none; flex-direction: column; gap: 1.5rem; overflow-y: auto;">
+                    <!-- Se carga dinámicamente -->
+                </div>
+                
+                <!-- Preview Panel -->
+                <aside class="preview-panel" id="previewPanel">
+                    <div class="preview-header">
+                        <h3>Vista Previa</h3>
+                        <button onclick="closePreview()">✖</button>
+                    </div>
+                    <div class="preview-content">
+                        <img id="previewImage" src="" alt="Preview">
+                        <p id="previewName" style="color: var(--text-muted); font-size: 0.9rem; word-break: break-all;"></p>
+                    </div>
+                </aside>
+            </div>
+        </main>
+    </div>
+
+    <!-- Log Console -->
+    <div id="logConsole" class="log-console">
+        <div class="log-console-header">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">
+                <span style="display: inline-block; width: 6px; height: 6px; background: #8b5cf6; border-radius: 50%; box-shadow: 0 0 8px #8b5cf6;"></span>
+                Consola de Procesos en Vivo
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <button onclick="clearConsole()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; gap: 4px;" title="Limpiar logs">🧹 Limpiar</button>
+                <button id="toggleConsoleBtn" onclick="toggleConsole()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.8rem; font-weight: 600;">▼</button>
+            </div>
+        </div>
+        <div id="consoleOutput" class="log-console-output">Bienvenido a NexFlow Manga Studio v3.0...
+Consola iniciada. Monitoreando logs del sistema...
+</div>
+    </div>
+
+    <!-- Search Modal -->
+    <div id="searchModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:100; align-items:center; justify-content:center; padding:2rem;">
+        <div style="background:var(--surface-1); width:100%; max-width:900px; height:80%; border-radius:12px; border:1px solid var(--border-color); display:flex; flex-direction:column; overflow:hidden;">
+            <div style="padding:1.5rem; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                <h2 style="font-size:1.2rem; font-weight:600;">Buscar Manga</h2>
+                <button onclick="closeSearchModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.5rem; transition:0.2s;">✖</button>
+            </div>
+            <!-- Tabs -->
+            <div style="display:flex; border-bottom:1px solid var(--border-color); background:var(--surface-1);">
+                <button id="tabName" onclick="switchSearchTab('name')" style="flex:1; padding:1rem; background:none; border:none; border-bottom:2px solid var(--primary); color:white; font-weight:600; cursor:pointer; transition:0.2s; outline:none;">Buscar por Nombre</button>
+                <button id="tabGenreYear" onclick="switchSearchTab('genreYear')" style="flex:1; padding:1rem; background:none; border:none; border-bottom:2px solid transparent; color:var(--text-muted); font-weight:600; cursor:pointer; transition:0.2s; outline:none;">Filtrar por Género y Año Mínimo</button>
+            </div>
+            <!-- Container 1 (Name) -->
+            <div id="searchNameContainer" style="padding:1.5rem; display:flex; gap:10px; background:var(--surface-2);">
+                <input type="text" id="searchInput" placeholder="Escribe el nombre del manga..." style="flex:1; padding:0.8rem 1rem; border-radius:8px; border:1px solid var(--border-color); background:var(--surface-1); color:white; font-size:1rem; outline:none;" onkeypress="if(event.key === 'Enter') searchManga()">
+                <button onclick="searchManga()" class="btn-flow gradient" style="padding:0.8rem 1.5rem;">Buscar</button>
+            </div>
+            <!-- Container 2 (Genre & Year) -->
+            <div id="searchGenreYearContainer" style="padding:1.5rem; display:none; gap:10px; background:var(--surface-2); align-items:center; flex-wrap:wrap;">
+                <select id="genreSelect" style="flex:2; min-width: 150px; padding:0.8rem 1rem; border-radius:8px; border:1px solid var(--border-color); background:var(--surface-1); color:white; font-size:1rem; outline:none; height: 45px;">
+                    <option value="">Cargando géneros...</option>
+                </select>
+                <input type="number" id="yearInput" placeholder="Año mínimo (ej: 2005)" min="1900" max="2100" style="flex:1; min-width: 100px; padding:0.8rem 1rem; border-radius:8px; border:1px solid var(--border-color); background:var(--surface-1); color:white; font-size:1rem; outline:none; height: 45px;" onkeypress="if(event.key === 'Enter') searchMangaByGenreYear()">
+                <button onclick="searchMangaByGenreYear()" class="btn-flow gradient" style="padding:0.8rem 1.5rem; height: 45px; display: flex; align-items: center; justify-content: center;">Filtrar</button>
+            </div>
+            <div id="searchResults" style="flex:1; overflow-y:auto; padding:1.5rem; display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:1.5rem; background:var(--bg-dark);">
+                <div style="grid-column:1/-1; text-align:center; color:var(--text-muted); margin-top:2rem;">Busca un manga para ver los resultados</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Utilities
+        const setStatus = (msg, isError = false) => {
+            const statusEl = document.getElementById('global-status');
+            const dot = document.querySelector('.status-dot');
+            statusEl.textContent = msg;
+            statusEl.style.color = isError ? 'var(--danger)' : 'var(--text-muted)';
+            dot.style.background = isError ? 'var(--danger)' : '#22c55e';
+            dot.style.boxShadow = `0 0 10px ${isError ? 'var(--danger)' : '#22c55e'}`;
+        };
+
+        // Flows
+        async function runFlow(id) {
+            const loader = document.getElementById(`loader-${id}`);
+            if(loader) loader.style.display = 'block';
+            setStatus(`Ejecutando proceso...`);
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/run_flow', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ flow_id: id.toString() })
+                });
+                const data = await response.json();
+                setStatus(data.message, data.status !== 'success');
+            } catch (error) {
+                setStatus('Error de conexión', true);
+            } finally {
+                if(loader) loader.style.display = 'none';
+            }
+        }
+
+        // Navigation state
+        let currentManga = '';
+        let currentChapter = '';
+
+        // Search Modal Logic
+        let searchResultsData = {};
+        let activeTab = 'name'; // 'name' or 'genreYear'
+        let genresLoaded = false;
+
+        function openSearchModal() {
+            document.getElementById('searchModal').style.display = 'flex';
+            if (activeTab === 'name') {
+                setTimeout(() => document.getElementById('searchInput').focus(), 100);
+            } else {
+                setTimeout(() => document.getElementById('yearInput').focus(), 100);
+            }
+        }
+
+        function closeSearchModal() {
+            document.getElementById('searchModal').style.display = 'none';
+        }
+
+        function switchSearchTab(tab) {
+            activeTab = tab;
+            const tabName = document.getElementById('tabName');
+            const tabGenreYear = document.getElementById('tabGenreYear');
+            const containerName = document.getElementById('searchNameContainer');
+            const containerGenreYear = document.getElementById('searchGenreYearContainer');
+            
+            if (tab === 'name') {
+                tabName.style.borderBottomColor = 'var(--primary)';
+                tabName.style.color = 'white';
+                tabGenreYear.style.borderBottomColor = 'transparent';
+                tabGenreYear.style.color = 'var(--text-muted)';
+                containerName.style.display = 'flex';
+                containerGenreYear.style.display = 'none';
+                setTimeout(() => document.getElementById('searchInput').focus(), 50);
+            } else {
+                tabGenreYear.style.borderBottomColor = 'var(--primary)';
+                tabGenreYear.style.color = 'white';
+                tabName.style.borderBottomColor = 'transparent';
+                tabName.style.color = 'var(--text-muted)';
+                containerName.style.display = 'none';
+                containerGenreYear.style.display = 'flex';
+                loadGenresDropdown();
+                setTimeout(() => document.getElementById('yearInput').focus(), 50);
+            }
+        }
+
+        async function loadGenresDropdown() {
+            if (genresLoaded) return;
+            const select = document.getElementById('genreSelect');
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/genres');
+                const genres = await res.json();
+                select.innerHTML = '';
+                
+                const sortedKeys = Object.keys(genres).sort((a, b) => a.localeCompare(b));
+                sortedKeys.forEach(key => {
+                    const opt = document.createElement('option');
+                    opt.value = genres[key];
+                    opt.textContent = key;
+                    select.appendChild(opt);
+                });
+                genresLoaded = true;
+            } catch (error) {
+                console.error("Error al cargar géneros", error);
+                select.innerHTML = '<option value="">Error al cargar géneros</option>';
+            }
+        }
+
+        async function searchMangaByGenreYear() {
+            const genre = document.getElementById('genreSelect').value;
+            const year = document.getElementById('yearInput').value.trim();
+            
+            if(!genre || !year) {
+                alert("Por favor selecciona un género e ingresa un año.");
+                return;
+            }
+            
+            const resultsDiv = document.getElementById('searchResults');
+            resultsDiv.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-muted); margin-top:2rem;">Buscando mangas del género ' + genre + ' desde el año ' + year + ' en adelante... (Esto puede tomar un momento, ya que verificamos las fechas de los primeros capítulos en el servidor)</div>';
+            
+            try {
+                const res = await fetch(`http://127.0.0.1:5000/api/search_genre_year?genre=${encodeURIComponent(genre)}&year=${encodeURIComponent(year)}`);
+                const data = await res.json();
+                
+                resultsDiv.innerHTML = '';
+                searchResultsData = {};
+                
+                if(data.length === 0) {
+                    resultsDiv.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--danger); margin-top:2rem;">No se encontraron mangas desde el año ' + year + ' en adelante para el género seleccionado.</div>';
+                    return;
+                }
+                
+                data.forEach(manga => {
+                    searchResultsData[manga.id] = manga;
+                    const card = document.createElement('div');
+                    card.className = 'image-card';
+                    card.style.height = 'auto';
+                    
+                    const thumb = manga.thumb ? manga.thumb : 'https://via.placeholder.com/200x300?text=No+Cover';
+                    const title = manga.title || 'Sin título';
+                    const escapedTitle = title.replace(/"/g, '&quot;');
+                    const chapters = manga.total_chapter || '?';
+                    const status = manga.status || 'Unknown';
+                    const mangaYear = manga.year || year;
+                    
+                    card.innerHTML = `
+                        <div style="position:relative; width:100%; padding-top:140%;">
+                            <img src="${thumb}" alt="${escapedTitle}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover;">
+                        </div>
+                        <div style="padding:1rem; display:flex; flex-direction:column; gap:0.5rem; background:var(--surface-1);">
+                            <div style="font-weight:600; font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapedTitle}">${title}</div>
+                            <div style="font-size:0.8rem; color:var(--text-muted); display:flex; justify-content:space-between;">
+                                <span>Caps: ${chapters} | Año: ${mangaYear}</span>
+                                <span style="color:${status==='ongoing'?'#22c55e':'var(--text-muted)'}">${status}</span>
+                            </div>
+                            <button class="btn-flow gradient" style="margin-top:0.5rem; justify-content:center; padding:0.6rem; font-size:0.9rem;" onclick="downloadManga('${manga.id}')">
+                                Descargar
+                            </button>
+                        </div>
+                    `;
+                    resultsDiv.appendChild(card);
+                });
+                
+            } catch (error) {
+                resultsDiv.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--danger); margin-top:2rem;">Error al buscar</div>';
+            }
+        }
+
+        async function searchManga() {
+            const query = document.getElementById('searchInput').value.trim();
+            if(!query) return;
+            
+            const resultsDiv = document.getElementById('searchResults');
+            resultsDiv.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-muted); margin-top:2rem;">Buscando...</div>';
+            
+            try {
+                const res = await fetch(`http://127.0.0.1:5000/api/search_manga?query=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                
+                resultsDiv.innerHTML = '';
+                searchResultsData = {};
+                
+                if(data.length === 0) {
+                    resultsDiv.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--danger); margin-top:2rem;">No se encontraron resultados</div>';
+                    return;
+                }
+                
+                data.forEach(manga => {
+                    searchResultsData[manga.id] = manga;
+                    const card = document.createElement('div');
+                    card.className = 'image-card';
+                    card.style.height = 'auto'; // override default height
+                    
+                    const thumb = manga.thumb ? manga.thumb : 'https://via.placeholder.com/200x300?text=No+Cover';
+                    const title = manga.title || 'Sin título';
+                    // Escape title for use in HTML attributes if needed
+                    const escapedTitle = title.replace(/"/g, '&quot;');
+                    const chapters = manga.total_chapter || '?';
+                    const status = manga.status || 'Unknown';
+                    
+                    card.innerHTML = `
+                        <div style="position:relative; width:100%; padding-top:140%;">
+                            <img src="${thumb}" alt="${escapedTitle}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover;">
+                        </div>
+                        <div style="padding:1rem; display:flex; flex-direction:column; gap:0.5rem; background:var(--surface-1);">
+                            <div style="font-weight:600; font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapedTitle}">${title}</div>
+                            <div style="font-size:0.8rem; color:var(--text-muted); display:flex; justify-content:space-between;">
+                                <span>Caps: ${chapters}</span>
+                                <span style="color:${status==='ongoing'?'#22c55e':'var(--text-muted)'}">${status}</span>
+                            </div>
+                            <button class="btn-flow gradient" style="margin-top:0.5rem; justify-content:center; padding:0.6rem; font-size:0.9rem;" onclick="downloadManga('${manga.id}')">
+                                Descargar
+                            </button>
+                        </div>
+                    `;
+                    resultsDiv.appendChild(card);
+                });
+                
+            } catch (error) {
+                resultsDiv.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--danger); margin-top:2rem;">Error al buscar</div>';
+            }
+        }
+
+        async function downloadManga(mangaId) {
+            const mangaData = searchResultsData[mangaId];
+            if (!mangaData) return;
+            
+            setStatus(`Iniciando descarga de ${mangaData.title}...`);
+            closeSearchModal();
+            
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/download_manga', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        manga_id: mangaData.id,
+                        manga_title: mangaData.title,
+                        manga_data: mangaData
+                    })
+                });
+                const data = await response.json();
+                setStatus(data.message, data.status !== 'success');
+            } catch (error) {
+                setStatus('Error de conexión', true);
+            }
+        }
+
+        // Load Mangas on boot
+        async function loadMangas() {
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/mangas');
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                const mangas = await res.json();
+                const select = document.getElementById('mangaSelect');
+                // Limpiar opciones previas excepto la primera
+                select.innerHTML = '<option value="">Selecciona un manga...</option>';
+                
+                mangas.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m;
+                    opt.textContent = m.replace(/_/g, ' ');
+                    select.appendChild(opt);
+                });
+            } catch (error) {
+                console.error("Error cargando mangas", error);
+                alert("Error al conectar con el servidor. ¿Estás seguro de que entraste a http://127.0.0.1:5000 y no abriste el archivo localmente?");
+            }
+        }
+
+        // Load Chapters
+        async function loadChapters() {
+            // Ocultar biblioteca si está activa
+            document.getElementById('libraryView').style.display = 'none';
+            document.querySelector('.explorer').style.display = 'flex';
+            
+            currentManga = document.getElementById('mangaSelect').value;
+            const list = document.getElementById('chapterList');
+            document.getElementById('selectAllChapters').checked = false;
+            
+            if (!currentManga) {
+                list.innerHTML = '<div style="text-align:center; color:#71717a; margin-top:20px;">Selecciona un manga</div>';
+                // Restablecer el estado del dashboard y la galería
+                document.getElementById('mangaDashboard').style.display = 'none';
+                document.getElementById('gallery').style.display = 'flex';
+                document.getElementById('galleryTitle').textContent = 'Imágenes del Capítulo';
+                document.getElementById('showDashboardBtn').style.display = 'none';
+                document.getElementById('galleryCount').style.display = 'block';
+                document.getElementById('galleryCount').textContent = '0 archivos';
+                return;
+            }
+
+            list.innerHTML = '<div style="text-align:center; color:#71717a;">Cargando...</div>';
+
+            try {
+                const res = await fetch(`http://127.0.0.1:5000/api/mangas/${encodeURIComponent(currentManga)}/chapters`);
+                const chapters = await res.json();
+                
+                list.innerHTML = '';
+                if(chapters.length === 0) {
+                    list.innerHTML = '<div style="text-align:center; color:#71717a;">Sin capítulos</div>';
+                    return;
+                }
+
+                chapters.forEach(cap => {
+                    const item = document.createElement('div');
+                    item.className = 'chapter-item';
+                    item.onclick = (e) => {
+                        // Evitar activar la vista si se hace click en el checkbox
+                        if(e.target.type !== 'checkbox') {
+                            document.querySelectorAll('.chapter-item').forEach(el => el.classList.remove('active'));
+                            item.classList.add('active');
+                            loadImages(cap);
+                        }
+                    };
+                    
+                    item.innerHTML = `
+                        <input type="checkbox" class="chapter-cb" value="${cap}">
+                        <span>📁 ${cap}</span>
+                    `;
+                    list.appendChild(item);
+                });
+                
+                // Cargar el dashboard con previsualización del siguiente bloque
+                loadNextBlockPreview(currentManga);
+                
+            } catch (error) {
+                list.innerHTML = '<div style="color:var(--danger)">Error cargando capítulos</div>';
+            }
+        }
+
+        // Select All Toggle
+        function toggleAllChapters() {
+            const isChecked = document.getElementById('selectAllChapters').checked;
+            document.querySelectorAll('.chapter-cb').forEach(cb => cb.checked = isChecked);
+        }
+
+        // PDF Conversion logic
+        async function convertSelectedToPdf() {
+            if (!currentManga) {
+                alert("Primero selecciona un manga.");
+                return;
+            }
+
+            const isAllChecked = document.getElementById('selectAllChapters').checked;
+            const selectedBoxes = Array.from(document.querySelectorAll('.chapter-cb:checked'));
+            
+            if (!isAllChecked && selectedBoxes.length === 0) {
+                alert("Selecciona al menos un capítulo para convertir.");
+                return;
+            }
+
+            const payload = {
+                manga_name: currentManga,
+                chapters: isAllChecked ? 'all' : selectedBoxes.map(cb => cb.value)
+            };
+
+            setStatus(`Iniciando conversión a PDF...`);
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/convert_pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                setStatus(data.message, data.status !== 'success');
+            } catch (error) {
+                setStatus('Error al enviar solicitud PDF', true);
+            }
+        }
+
+        // Dashboard and Previews
+        async function loadNextBlockPreview(mangaName) {
+            const dashboard = document.getElementById('mangaDashboard');
+            dashboard.innerHTML = '<div style="text-align:center; color:var(--text-muted); margin-top: 40px;">Cargando previsualización del siguiente video...</div>';
+            showMangaDashboard();
+            
+            try {
+                const res = await fetch(`http://127.0.0.1:5000/api/mangas/${encodeURIComponent(mangaName)}/next_block_preview`);
+                const data = await res.json();
+                
+                let html = '';
+                const cleanName = mangaName.replace(/_/g, ' ');
+                
+                if (data.available) {
+                    html = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 0.5rem;">
+                            <div>
+                                <h3 style="font-size: 1.4rem; font-weight: 800; color: white;">${cleanName}</h3>
+                                <div style="font-size: 0.9rem; color: var(--text-muted); margin-top: 4px;">
+                                    Progreso de la Serie: Continuación posterior al Cap 1
+                                </div>
+                            </div>
+                            <span style="background: rgba(139, 92, 246, 0.2); color: var(--primary); border: 1px solid var(--primary); padding: 0.4rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.85rem;">
+                                Parte ${data.next_part} (Caps ${data.start_chapter}-${data.end_chapter})
+                            </span>
+                        </div>
+                        
+                        <div style="background: var(--surface-1); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                            <h4 style="font-size: 1.1rem; font-weight: 600; color: white; display: flex; align-items: center; gap: 8px;">
+                                📺 Vista Previa de Publicación
+                            </h4>
+                            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                                Simulación de cómo se verá tu video y metadatos en YouTube:
+                            </p>
+                            
+                            <div style="display: flex; gap: 24px; flex-wrap: wrap; margin-top: 0.5rem;">
+                                <!-- Columna Miniatura -->
+                                <div style="flex: 1.2; min-width: 280px; display: flex; flex-direction: column; gap: 8px;">
+                                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Miniatura (16:9)</div>
+                                    
+                                    ${data.thumbnail_url ? `
+                                        <div style="position: relative; width: 100%; padding-top: 56.25%; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.7); border: 1px solid var(--border-color);">
+                                            <img src="${data.thumbnail_url}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;">
+                                        </div>
+                                    ` : `
+                                        <div style="position: relative; width: 100%; padding-top: 56.25%; border-radius: 8px; border: 2px dashed var(--border-color); background: var(--surface-2); display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                                            <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;">
+                                                <span style="font-size: 2.2rem;">🖼️</span>
+                                                <span style="color: var(--danger); font-size: 0.9rem; font-weight: 600;">Miniatura no disponible</span>
+                                                <span style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 0 15px;">La miniatura aún no se ha diseñado</span>
+                                            </div>
+                                        </div>
+                                    `}
+                                    
+                                    ${data.thumbnail_prompt ? `
+                                        <div style="margin-top: 12px; background: var(--surface-2); border-radius: 8px; padding: 12px; border: 1px solid var(--border-color);">
+                                            <div style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; letter-spacing: 0.5px;">Prompt para Imagen IA</div>
+                                            <div style="font-size: 0.75rem; color: #d4d4d8; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-height: 100px; overflow-y: auto; line-height: 1.4;">${data.thumbnail_prompt}</div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                
+                                <!-- Columna Textos -->
+                                <div style="flex: 2; min-width: 320px; display: flex; flex-direction: column; gap: 16px;">
+                                    <div>
+                                        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 6px;">Título del Video</div>
+                                        <div style="font-size: 1.1rem; font-weight: 700; color: white; background: var(--surface-2); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; word-break: break-word; line-height: 1.4; font-family: inherit;">
+                                            ${data.title}
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 6px;">Descripción de YouTube</div>
+                                        <textarea readonly style="width: 100%; height: 200px; font-size: 0.85rem; color: #d4d4d8; background: var(--surface-2); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; resize: none; outline: none; line-height: 1.5; font-family: inherit;">${data.description}</textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    html = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 0.5rem;">
+                            <div>
+                                <h3 style="font-size: 1.4rem; font-weight: 800; color: white;">${cleanName}</h3>
+                                <div style="font-size: 0.9rem; color: var(--text-muted); margin-top: 4px;">
+                                    Estado: Continuación posterior al Cap 1
+                                </div>
+                            </div>
+                            <span style="background: rgba(244, 63, 94, 0.15); color: var(--danger); border: 1px solid rgba(244, 63, 94, 0.3); padding: 0.4rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.85rem;">
+                                Pendiente Parte ${data.next_part}
+                            </span>
+                        </div>
+                        
+                        <div style="background: var(--surface-1); border: 1px solid rgba(244, 63, 94, 0.25); border-radius: 12px; padding: 2.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                            <div style="font-size: 3rem;">⚠️</div>
+                            <div style="display: flex; flex-direction: column; gap: 6px;">
+                                <h4 style="font-size: 1.2rem; font-weight: 700; color: white;">Previsualización No Disponible</h4>
+                                <p style="color: var(--text-muted); font-size: 0.95rem; max-width: 500px; line-height: 1.5;">
+                                    No se han encontrado metadatos ni miniatura generados en el directorio de outputs para el siguiente bloque largo de esta serie.
+                                </p>
+                            </div>
+                            
+                            <div style="background: var(--surface-2); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.2rem; width: 100%; max-width: 480px; text-align: left; margin-top: 0.5rem;">
+                                <div style="font-weight: 700; font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.5px;">Detalles de la Serie</div>
+                                <div style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 6px; color: #e4e4e7;">
+                                    <div><strong>Siguiente bloque a procesar:</strong> Parte ${data.next_part}</div>
+                                    <div><strong>Rango de capítulos:</strong> Capítulos ${data.start_chapter} al ${data.end_chapter}</div>
+                                    <div style="margin-top: 10px; color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--border-color); padding-top: 10px; line-height: 1.4;">
+                                        💡 Para habilitar la previsualización en la web, ejecuta primero el proceso de creación de guiones y metadatos (Fase IA) para este manga en la consola.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                dashboard.innerHTML = html;
+                
+            } catch (error) {
+                console.error("Error al cargar la vista previa", error);
+                dashboard.innerHTML = `
+                    <div style="background: var(--surface-1); border: 1px solid var(--danger); border-radius: 12px; padding: 2rem; text-align: center; color: var(--danger);">
+                        <h4>Error al cargar el Dashboard de Previsualización</h4>
+                        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 8px;">Por favor verifica la conexión con el servidor Flask.</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function showMangaDashboard() {
+            document.getElementById('libraryView').style.display = 'none';
+            document.querySelector('.explorer').style.display = 'flex';
+            document.getElementById('gallery').style.display = 'none';
+            document.getElementById('mangaDashboard').style.display = 'flex';
+            document.getElementById('galleryTitle').textContent = 'Siguiente Video Largo';
+            document.getElementById('showDashboardBtn').style.display = 'none';
+            document.getElementById('galleryCount').style.display = 'none';
+            document.getElementById('undoBtn').style.display = 'none';
+        }
+
+        // Load Images
+        async function loadImages(chapter) {
+            currentChapter = chapter;
+            
+            // Ocultar Dashboard y mostrar Galería
+            document.getElementById('mangaDashboard').style.display = 'none';
+            document.getElementById('gallery').style.display = 'grid';
+            
+            // Mostrar botón para volver al Dashboard
+            document.getElementById('showDashboardBtn').style.display = 'inline-flex';
+            document.getElementById('galleryCount').style.display = 'block';
+            
+            document.getElementById('galleryTitle').textContent = `Capítulo: ${chapter}`;
+            const gallery = document.getElementById('gallery');
+            const count = document.getElementById('galleryCount');
+            
+            gallery.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color:var(--text-muted)">Cargando imágenes...</div>';
+            count.textContent = 'Cargando...';
+
+            try {
+                const res = await fetch(`http://127.0.0.1:5000/api/mangas/${encodeURIComponent(currentManga)}/chapters/${encodeURIComponent(chapter)}/images`);
+                const images = await res.json();
+                
+                gallery.innerHTML = '';
+                count.textContent = `${images.length} archivos`;
+
+                if (images.length === 0) {
+                    gallery.innerHTML = '<div class="empty-state"><p>No se encontraron imágenes (.webp, .jpg, .png)</p></div>';
+                    return;
+                }
+
+                images.forEach(img => {
+                    const card = document.createElement('div');
+                    card.className = 'image-card';
+                    // Usamos encodeURI para manejar espacios y caracteres especiales en la URL
+                    const imgUrl = `http://127.0.0.1:5000/images/${img.path.split('/').map(encodeURIComponent).join('/')}`;
+                    
+                    card.innerHTML = `
+                        <img src="${imgUrl}" alt="${img.name}" loading="lazy" onclick="showPreview('${imgUrl}', '${img.name}')">
+                        <div class="image-overlay">
+                            <span class="image-name">${img.name}</span>
+                            <button class="delete-btn" onclick="deleteImage('${img.path}', this)">🗑️ Borrar Spam</button>
+                        </div>
+                    `;
+                    gallery.appendChild(card);
+                });
+            } catch (error) {
+                gallery.innerHTML = '<div style="color:var(--danger)">Error al cargar las imágenes</div>';
+            }
+        }
+
+        // Delete Image
+        async function deleteImage(path, btn) {
+            const card = btn.closest('.image-card');
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/delete_image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: path })
+                });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    card.style.transform = 'scale(0.8)';
+                    card.style.opacity = '0';
+                    setTimeout(() => {
+                        card.remove();
+                        // Actualizar contador
+                        const countEl = document.getElementById('galleryCount');
+                        const current = parseInt(countEl.textContent);
+                        if(!isNaN(current)) countEl.textContent = `${current - 1} archivos`;
+                        // Mostrar botón deshacer
+                        document.getElementById('undoBtn').style.display = 'block';
+                    }, 300);
+                } else {
+                    alert(data.message);
+                }
+            } catch (e) {
+                alert("Error de red al intentar borrar.");
+            }
+        }
+
+        // Undo Delete
+        async function undoDelete() {
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/undo_delete', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    setStatus("Imagen restaurada");
+                    if (currentChapter) loadImages(currentChapter);
+                } else {
+                    alert(data.message);
+                    document.getElementById('undoBtn').style.display = 'none';
+                }
+            } catch (e) {
+                alert("Error al intentar deshacer");
+            }
+        }
+
+        // Preview Logic
+        function showPreview(url, name) {
+            document.getElementById('previewPanel').style.display = 'flex';
+            document.getElementById('previewImage').src = url;
+            document.getElementById('previewName').textContent = name;
+        }
+
+        function closePreview() {
+            document.getElementById('previewPanel').style.display = 'none';
+        }
+
+        // Library Views and Actions
+        function getPlaceholderCover(title) {
+            const displayTitle = title.length > 25 ? title.substring(0, 22) + '...' : title;
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">
+                <defs>
+                    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:%231f1937;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:%23110d21;stop-opacity:1" />
+                    </linearGradient>
+                </defs>
+                <rect width="100%" height="100%" fill="url(%23grad)"/>
+                <rect x="8" y="8" width="184" height="284" rx="10" fill="none" stroke="%233f3f46" stroke-width="2" stroke-opacity="0.3"/>
+                <g transform="translate(100, 100) scale(1.5)" opacity="0.15">
+                    <path d="M-18,-24 L18,-24 L18,24 L-18,24 Z" fill="none" stroke="%23ffffff" stroke-width="3"/>
+                    <path d="M-10,-12 L10,-12" fill="none" stroke="%23ffffff" stroke-width="2"/>
+                    <path d="M-10,-4 L10,-4" fill="none" stroke="%23ffffff" stroke-width="2"/>
+                    <path d="M-10,4 L4,4" fill="none" stroke="%23ffffff" stroke-width="2"/>
+                </g>
+                <text x="50%" y="220" dominant-baseline="middle" text-anchor="middle" font-family="'Outfit', system-ui, sans-serif" font-weight="700" font-size="12" fill="%23e4e4e7">
+                    ${displayTitle}
+                </text>
+                <text x="50%" y="245" dominant-baseline="middle" text-anchor="middle" font-family="'Outfit', system-ui, sans-serif" font-weight="800" font-size="9" fill="%238b5cf6" letter-spacing="1">
+                    NEXFLOW STUDIO
+                </text>
+            </svg>`;
+            return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+        }
+
+        function handleImageError(img) {
+            img.onerror = null;
+            img.src = getPlaceholderCover(img.alt);
+        }
+
+        async function showLibrary() {
+            // Ocultar explorador de archivos
+            document.querySelector('.explorer').style.display = 'none';
+            
+            // Ocultar otros paneles principales
+            document.getElementById('gallery').style.display = 'none';
+            document.getElementById('mangaDashboard').style.display = 'none';
+            document.getElementById('previewPanel').style.display = 'none';
+            
+            // Mostrar biblioteca
+            const libView = document.getElementById('libraryView');
+            libView.style.display = 'grid';
+            
+            // Actualizar encabezados
+            document.getElementById('galleryTitle').textContent = 'Mi Biblioteca de Mangas';
+            document.getElementById('showDashboardBtn').style.display = 'none';
+            document.getElementById('galleryCount').style.display = 'none';
+            document.getElementById('undoBtn').style.display = 'none';
+            
+            libView.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color:var(--text-muted)">Cargando biblioteca...</div>';
+            
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/library');
+                const mangas = await res.json();
+                
+                libView.innerHTML = '';
+                if (mangas.length === 0) {
+                    libView.innerHTML = `
+                        <div class="empty-state">
+                            <span style="font-size: 3rem;">📚</span>
+                            <p>No tienes ningún manga registrado en tu biblioteca local.</p>
+                            <button class="btn-flow gradient" onclick="openSearchModal()" style="margin-top: 10px;">Buscar y Descargar Manga</button>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                mangas.forEach(manga => {
+                    const card = document.createElement('div');
+                    card.className = 'library-card';
+                    
+                    const title = manga.title || 'Sin título';
+                    const escapedTitle = title.replace(/"/g, '&quot;');
+                    const cover = manga.cover_url ? `http://127.0.0.1:5000${manga.cover_url}` : getPlaceholderCover(title);
+                    const downloaded = manga.downloaded_count || 0;
+                    const total = manga.total_chapters || 0;
+                    const progress = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
+                    const statusColor = manga.status === 'ongoing' ? '#22c55e' : 'var(--text-muted)';
+                    const statusBg = manga.status === 'ongoing' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(161, 161, 170, 0.15)';
+                    
+                    card.innerHTML = `
+                        <div class="library-card-img-container">
+                            <img src="${cover}" alt="${escapedTitle}" onerror="handleImageError(this)">
+                            <span class="library-badge-type">${manga.type}</span>
+                            <span class="library-badge-status" style="color: ${statusColor}; border: 1px solid ${statusColor}; background: ${statusBg};">${manga.status}</span>
+                        </div>
+                        <div class="library-card-content">
+                            <h4 class="library-manga-title" title="${escapedTitle}">${title}</h4>
+                            <div class="library-progress-container">
+                                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted);">
+                                    <span>Descargado:</span>
+                                    <span style="font-weight: 600; color: white;">${downloaded} / ${total} caps</span>
+                                </div>
+                                <div class="library-progress-bar-bg">
+                                    <div class="library-progress-bar-fill" style="width: ${progress}%"></div>
+                                </div>
+                            </div>
+                            <p class="library-summary">${manga.summary || 'Sin resumen disponible.'}</p>
+                            <div class="library-actions">
+                                <button class="btn-flow" style="flex: 1; justify-content: center; padding: 0.5rem; font-size: 0.85rem;" onclick="selectMangaInExplorer('${manga.folder_name}')">
+                                    📁 Capítulos
+                                </button>
+                                <button class="btn-flow gradient" style="flex: 1.2; justify-content: center; padding: 0.5rem; font-size: 0.85rem; gap: 6px;" onclick="downloadRemaining('${manga.id}', '${escapedTitle}', this)" ${downloaded >= total && total > 0 ? 'disabled style="opacity: 0.6; cursor: not-allowed; background: var(--surface-2); border: 1px solid var(--border-color);"' : ''}>
+                                    📥 Restantes
+                                </button>
+                                <button class="delete-btn" style="padding: 0.5rem 0.6rem; display: flex; align-items: center; justify-content: center; border-radius: 8px;" title="Eliminar de la Biblioteca" onclick="deleteLibraryManga('${manga.id}', '${escapedTitle}', this)">
+                                    🗑️
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    libView.appendChild(card);
+                });
+            } catch (error) {
+                console.error("Error al cargar biblioteca", error);
+                libView.innerHTML = '<div style="color:var(--danger); grid-column:1/-1; text-align:center;">Error al cargar la biblioteca</div>';
+            }
+        }
+
+        async function selectMangaInExplorer(folderName) {
+            // Mostrar explorador
+            document.querySelector('.explorer').style.display = 'flex';
+            document.getElementById('libraryView').style.display = 'none';
+            
+            const select = document.getElementById('mangaSelect');
+            
+            // Asegurarnos de que el manga existe en las opciones, si no, recargamos
+            let found = false;
+            for (let i = 0; i < select.options.length; i++) {
+                if (select.options[i].value === folderName) {
+                    select.selectedIndex = i;
+                    found = true;
+                    break;
+                }
+            }
+            
+            if (!found) {
+                await loadMangas();
+                for (let i = 0; i < select.options.length; i++) {
+                    if (select.options[i].value === folderName) {
+                        select.selectedIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            // Forzar carga de capítulos
+            loadChapters();
+        }
+
+        async function downloadRemaining(mangaId, mangaTitle, btn) {
+            setStatus(`Iniciando descarga de capítulos restantes para ${mangaTitle}...`);
+            const oldText = btn.innerHTML;
+            btn.innerHTML = '⏳ Solicitando...';
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/mangas/download_remaining', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        manga_id: mangaId,
+                        manga_title: mangaTitle
+                    })
+                });
+                const data = await response.json();
+                setStatus(data.message, data.status !== 'success');
+                btn.innerHTML = '📥 Descargando';
+            } catch (error) {
+                setStatus('Error al solicitar descarga', true);
+                btn.innerHTML = oldText;
+                btn.disabled = false;
+            }
+        }
+
+        async function deleteLibraryManga(mangaId, mangaTitle, btn) {
+            if (!confirm(`¿Estás SEGURO de eliminar '${mangaTitle}' de la biblioteca?\nEsta acción eliminará el registro de todos sus capítulos, imágenes y guiones de la base de datos.`)) {
+                return;
+            }
+            
+            setStatus(`Eliminando ${mangaTitle} de la base de datos...`);
+            const card = btn.closest('.library-card');
+            
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/mangas/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        manga_id: mangaId,
+                        manga_title: mangaTitle
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    setStatus(data.message);
+                    card.style.transform = 'scale(0.8)';
+                    card.style.opacity = '0';
+                    setTimeout(() => {
+                        card.remove();
+                        // Si no quedan tarjetas, mostrar empty state
+                        const libView = document.getElementById('libraryView');
+                        if (libView.children.length === 0) {
+                            showLibrary();
+                        }
+                    }, 300);
+                } else {
+                    setStatus(data.message, true);
+                    alert(data.message);
+                }
+            } catch (error) {
+                setStatus('Error al conectar con el servidor para eliminar.', true);
+            }
+        }
+
+        // Console Functions
+        let consoleCollapsed = false;
+        function toggleConsole() {
+            const consoleEl = document.getElementById('logConsole');
+            const btn = document.getElementById('toggleConsoleBtn');
+            const outputEl = document.getElementById('consoleOutput');
+            
+            if (consoleCollapsed) {
+                consoleEl.style.height = '200px';
+                outputEl.style.display = 'block';
+                btn.textContent = '▼';
+                consoleCollapsed = false;
+            } else {
+                consoleEl.style.height = '35px';
+                outputEl.style.display = 'none';
+                btn.textContent = '▲';
+                consoleCollapsed = true;
+            }
+        }
+        
+        function clearConsole() {
+            document.getElementById('consoleOutput').innerHTML = '<span style="color: var(--text-muted)">[Consola limpia]</span>\n';
+        }
+
+        let logStartIndex = 0;
+        async function pollLogs() {
+            try {
+                const res = await fetch(`http://127.0.0.1:5000/api/logs?start=${logStartIndex}`);
+                const data = await res.json();
+                
+                if (data.logs && data.logs.length > 0) {
+                    const output = document.getElementById('consoleOutput');
+                    
+                    data.logs.forEach(log => {
+                        const cleanLog = log
+                            .replace(/&/g, "&amp;")
+                            .replace(/</g, "&lt;")
+                            .replace(/>/g, "&gt;");
+                        
+                        let formattedLog = cleanLog;
+                        if (cleanLog.includes("[OK]") || cleanLog.includes("[SUCCESS]") || cleanLog.includes("✅")) {
+                            formattedLog = `<span style="color: #22c55e">${cleanLog}</span>`;
+                        } else if (cleanLog.includes("[ERROR]") || cleanLog.includes("[CRITICAL]") || cleanLog.includes("❌")) {
+                            formattedLog = `<span style="color: #f43f5e">${cleanLog}</span>`;
+                        } else if (cleanLog.includes("[WARNING]") || cleanLog.includes("[AVISO]") || cleanLog.includes("⚠️")) {
+                            formattedLog = `<span style="color: #f59e0b">${cleanLog}</span>`;
+                        }
+                        
+                        output.innerHTML += formattedLog;
+                    });
+                    
+                    logStartIndex = data.next_start;
+                    
+                    // Simple Dom Trim to keep last 1000 lines
+                    const lines = output.innerHTML.split('\n');
+                    if (lines.length > 1000) {
+                        output.innerHTML = lines.slice(lines.length - 1000).join('\n');
+                    }
+                    
+                    // Auto scroll to bottom
+                    output.scrollTop = output.scrollHeight;
+                }
+            } catch (e) {
+                console.error("Error al obtener logs", e);
+            }
+        }
+
+        // Comments Tab Logic
+        function showCommentsView() {
+            // Ocultar explorador de archivos y otros paneles
+            document.querySelector('.explorer').style.display = 'none';
+            document.getElementById('libraryView').style.display = 'none';
+            document.getElementById('gallery').style.display = 'none';
+            document.getElementById('mangaDashboard').style.display = 'none';
+            document.getElementById('previewPanel').style.display = 'none';
+            
+            // Mostrar comentarios
+            document.getElementById('commentsView').style.display = 'flex';
+            
+            // Actualizar encabezado
+            document.getElementById('galleryTitle').textContent = 'Centro de Comentarios e Interacción';
+            document.getElementById('showDashboardBtn').style.display = 'none';
+            document.getElementById('galleryCount').style.display = 'none';
+            document.getElementById('undoBtn').style.display = 'none';
+            
+            loadComments();
+        }
+
+        async function loadComments() {
+            const list = document.getElementById('commentsList');
+            list.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding-top: 20px;">Cargando comentarios...</div>';
+            
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/comments');
+                const comments = await res.json();
+                
+                list.innerHTML = '';
+                if (comments.length === 0) {
+                    list.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding-top: 20px;">No hay comentarios pendientes.</div>';
+                    // Reset details
+                    document.getElementById('commentDetailEmpty').style.display = 'flex';
+                    document.getElementById('commentDetailContent').style.display = 'none';
+                    return;
+                }
+                
+                comments.forEach(c => {
+                    const card = document.createElement('div');
+                    card.className = 'chapter-item';
+                    card.style.flexDirection = 'column';
+                    card.style.alignItems = 'flex-start';
+                    card.style.gap = '6px';
+                    card.style.padding = '12px';
+                    card.style.background = 'var(--surface-2)';
+                    card.style.border = '1px solid var(--border-color)';
+                    card.style.borderRadius = '8px';
+                    
+                    const timeStr = new Date(c.fecha_publicacion).toLocaleDateString('es-ES', {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+                    const cleanMangaName = c.manga_key.replace(/_/g, ' ');
+                    
+                    card.onclick = (e) => {
+                        if (e.target.tagName !== 'BUTTON') {
+                            document.querySelectorAll('#commentsList .chapter-item').forEach(el => el.classList.remove('active'));
+                            card.classList.add('active');
+                            selectComment(c);
+                        }
+                    };
+                    
+                    card.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                            <span style="font-weight: 700; color: var(--secondary); font-size: 0.9rem;">@${c.autor}</span>
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">${timeStr}</span>
+                        </div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;">
+                            🎬 ${cleanMangaName}
+                        </div>
+                        <p style="font-size: 0.85rem; color: var(--text-main); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; word-break: break-all;">
+                            "${c.texto}"
+                        </p>
+                        <div style="width: 100%; display: flex; justify-content: flex-end; margin-top: 4px;">
+                            <button onclick="markCommentRead('${c.id}', event)" class="btn-flow" style="padding: 4px 8px; font-size: 0.75rem; border-radius: 4px; background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.3); color: #22c55e;">
+                                ✓ Leído
+                            </button>
+                        </div>
+                    `;
+                    list.appendChild(card);
+                });
+            } catch (error) {
+                console.error("Error cargando comentarios", error);
+                list.innerHTML = '<div style="text-align: center; color: var(--danger); padding-top: 20px;">Error al cargar comentarios.</div>';
+            }
+        }
+
+        async function syncComments() {
+            setStatus("Sincronizando comentarios con YouTube...");
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/comments/sync', { method: 'POST' });
+                const data = await res.json();
+                setStatus(data.message, data.status !== 'success');
+                loadComments();
+                updateUnreadCount();
+            } catch (error) {
+                setStatus("Error al sincronizar comentarios", true);
+            }
+        }
+
+        function selectComment(comment) {
+            document.getElementById('commentDetailEmpty').style.display = 'none';
+            document.getElementById('commentDetailContent').style.display = 'flex';
+            
+            document.getElementById('detailAuthor').textContent = `@${comment.autor}`;
+            const timeStr = new Date(comment.fecha_publicacion).toLocaleString('es-ES');
+            document.getElementById('detailDate').textContent = timeStr;
+            document.getElementById('detailCommentText').textContent = comment.texto;
+            
+            // 1. Render Video Player
+            const container = document.getElementById('detailVideoContainer');
+            if (comment.youtube_video_id && !comment.youtube_video_id.startsWith('mock_')) {
+                const ytId = comment.youtube_video_id.split(',')[0].trim();
+                container.innerHTML = `
+                    <iframe src="https://www.youtube.com/embed/${ytId}" style="position: absolute; top:0; left:0; width:100%; height:100%; border:none;" allowfullscreen></iframe>
+                `;
+            } else if (comment.local_video_exists) {
+                container.innerHTML = `
+                    <video controls style="position: absolute; top:0; left:0; width:100%; height:100%; object-fit: cover;">
+                        <source src="http://127.0.0.1:5000${comment.local_video_url}" type="video/mp4">
+                    </video>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); gap: 10px; background: var(--surface-2); padding: 20px; text-align: center;">
+                        <span style="font-size: 2.5rem;">📽️</span>
+                        <span style="font-weight: 600; font-size: 0.9rem; color: white;">Video no disponible</span>
+                        <span style="font-size: 0.75rem;">El video local fue eliminado tras subirse, y no existe un ID de YouTube real para embeber.</span>
+                    </div>
+                `;
+            }
+            
+            // 2. Render Manga Info Card
+            const mangaCard = document.getElementById('detailMangaCard');
+            if (comment.manga_info) {
+                mangaCard.style.display = 'flex';
+                document.getElementById('detailMangaTitle').textContent = comment.manga_info.title;
+                document.getElementById('detailMangaStatus').textContent = comment.manga_info.status;
+                document.getElementById('detailMangaStatus').style.color = comment.manga_info.status === 'ongoing' ? '#22c55e' : 'var(--text-muted)';
+                document.getElementById('detailMangaChapters').textContent = `${comment.manga_info.downloaded_count} / ${comment.manga_info.total_chapters} capítulos`;
+                
+                const coverUrl = comment.manga_info.cover_url ? `http://127.0.0.1:5000${comment.manga_info.cover_url}` : 'https://via.placeholder.com/110x160?text=No+Cover';
+                document.getElementById('detailMangaCover').src = coverUrl;
+                
+                // Configurar descargas restantes
+                const dlBtn = document.getElementById('detailDownloadBtn');
+                const downloaded = comment.manga_info.downloaded_count || 0;
+                const total = comment.manga_info.total_chapters || 0;
+                
+                if (downloaded >= total && total > 0) {
+                    dlBtn.disabled = true;
+                    dlBtn.innerHTML = '✅ Todos los Capítulos Descargados';
+                    dlBtn.style.opacity = '0.6';
+                    dlBtn.style.cursor = 'not-allowed';
+                } else {
+                    dlBtn.disabled = false;
+                    dlBtn.innerHTML = '📥 Continuar Descarga de Restantes';
+                    dlBtn.style.opacity = '1';
+                    dlBtn.style.cursor = 'pointer';
+                    dlBtn.onclick = () => {
+                        downloadRemaining(comment.manga_info.id, comment.manga_info.title, dlBtn);
+                    };
+                }
+            } else {
+                mangaCard.style.display = 'none';
+            }
+            
+            // Configure Mark as Read button
+            document.getElementById('detailMarkReadBtn').onclick = (e) => {
+                markCommentRead(comment.id, e);
+            };
+        }
+
+        async function markCommentRead(commentId, event) {
+            if(event) event.stopPropagation();
+            
+            try {
+                const res = await fetch(`http://127.0.0.1:5000/api/comments/${commentId}/read`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    setStatus("Comentario marcado como leído.");
+                    // Quitar de los detalles si es el actual
+                    document.getElementById('commentDetailEmpty').style.display = 'flex';
+                    document.getElementById('commentDetailContent').style.display = 'none';
+                    
+                    loadComments();
+                    updateUnreadCount();
+                } else {
+                    alert(data.message);
+                }
+            } catch (error) {
+                console.error("Error al marcar como leído", error);
+            }
+        }
+
+        async function updateUnreadCount() {
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/comments/count');
+                const data = await res.json();
+                
+                const badge = document.getElementById('unread-comment-badge');
+                if (data.count > 0) {
+                    badge.textContent = data.count;
+                    badge.style.display = 'flex';
+                } else {
+                    badge.style.display = 'none';
+                }
+            } catch (error) {
+                console.error("Error al obtener conteo", error);
+            }
+        }
+
+        let wasDownloading = false;
+
+        async function checkQueueStatus() {
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/download_queue/status');
+                const data = await res.json();
+                
+                const statusEl = document.getElementById('global-status');
+                const dot = document.querySelector('.status-dot');
+                
+                if (data.current) {
+                    wasDownloading = true;
+                    statusEl.textContent = `📥 Descargando: ${data.current} (${data.queue_size} en espera)`;
+                    statusEl.style.color = 'var(--primary)';
+                    dot.style.background = 'var(--primary)';
+                    dot.style.boxShadow = '0 0 12px var(--primary)';
+                } else if (data.queue_size > 0) {
+                    wasDownloading = true;
+                    statusEl.textContent = `⏳ En cola: ${data.queue_size} descargas pendientes`;
+                    statusEl.style.color = 'var(--secondary)';
+                    dot.style.background = 'var(--secondary)';
+                    dot.style.boxShadow = '0 0 12px var(--secondary)';
+                } else if (wasDownloading) {
+                    wasDownloading = false;
+                    statusEl.textContent = "Sistema en línea";
+                    statusEl.style.color = 'var(--text-muted)';
+                    dot.style.background = '#22c55e';
+                    dot.style.boxShadow = '0 0 10px #22c55e';
+                }
+            } catch (error) {
+                console.error("Error al consultar el estado de la cola", error);
+            }
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            loadMangas();
+            updateUnreadCount();
+            checkQueueStatus();
+            // Start polling logs every 1 second
+            setInterval(pollLogs, 1000);
+            // Polling comments unread count every 10 seconds
+            setInterval(updateUnreadCount, 10000);
+            // Polling download queue status every 3 seconds
+            setInterval(checkQueueStatus, 3000);
+        });
+    </script>
+</body>
+</html>
