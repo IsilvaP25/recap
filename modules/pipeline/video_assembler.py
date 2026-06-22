@@ -334,7 +334,7 @@ def render_segment_task(args):
     return (seg_p, dur)
 
 
-def assemble_video(manga_name, chapter_num, pdf_path, mode="full", page_limit=None):
+def assemble_video(manga_name, chapter_num, pdf_path, mode="full", page_limit=None, suffix=""):
     base_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     work_dir = os.path.join(base_proj, "outputs", manga_name, "_TEMP", f"Capitulo_{chapter_num}")
     audio_dir = os.path.join(work_dir, "audio")
@@ -347,7 +347,8 @@ def assemble_video(manga_name, chapter_num, pdf_path, mode="full", page_limit=No
     
     is_short = (mode == "short")
     prefix = "Short" if is_short else "Capitulo"
-    out_video = os.path.join(final_out_dir, f"{prefix}_{chapter_num}.mp4")
+    video_filename = f"{prefix}_{chapter_num}_{suffix}.mp4" if suffix else f"{prefix}_{chapter_num}.mp4"
+    out_video = os.path.join(final_out_dir, video_filename)
     
     if not os.path.exists(pdf_path): return
 
@@ -356,10 +357,17 @@ def assemble_video(manga_name, chapter_num, pdf_path, mode="full", page_limit=No
 
     # Lógica de audio (Sincronización)
     audio_f = None
-    if is_short and os.path.exists(os.path.join(audio_dir, "SHORT_FULL.mp3")):
-        audio_f = os.path.join(audio_dir, "SHORT_FULL.mp3")
-        script_f = os.path.join(base_proj, "outputs", manga_name, "Scripts", "Short_guion_ESP.txt")
-        if not os.path.exists(script_f): script_f = os.path.join(base_proj, "outputs", manga_name, "Scripts", "Short_guion_raw.txt")
+    audio_name = f"SHORT_FULL_{suffix}.mp3" if suffix else "SHORT_FULL.mp3"
+    if is_short and os.path.exists(os.path.join(audio_dir, audio_name)):
+        audio_f = os.path.join(audio_dir, audio_name)
+        script_name = f"Short_guion_ESP_{suffix}.txt" if suffix else "Short_guion_ESP.txt"
+        script_f = os.path.join(base_proj, "outputs", manga_name, "Scripts", script_name)
+        if not os.path.exists(script_f): 
+            raw_name = f"Short_guion_raw_{suffix}.txt" if suffix else "Short_guion_raw.txt"
+            script_f = os.path.join(base_proj, "outputs", manga_name, "Scripts", raw_name)
+            if not os.path.exists(script_f):
+                specific_name = f"Short_guion_{suffix}.txt" if suffix else "Short_guion.txt"
+                script_f = os.path.join(base_proj, "outputs", manga_name, "Scripts", specific_name)
         
         if os.path.exists(audio_f) and os.path.exists(script_f):
             total_dur = get_audio_duration(audio_f)
@@ -434,7 +442,8 @@ def assemble_video(manga_name, chapter_num, pdf_path, mode="full", page_limit=No
     target_w = 720 if is_short else 700
     print(f"[{mode.upper()}] Preparando {len(pts)} páginas a {target_w}px de ancho...")
     
-    words_json_path = os.path.join(audio_dir, "SHORT_FULL_words.json")
+    words_name = f"SHORT_FULL_{suffix}_words.json" if suffix else "SHORT_FULL_words.json"
+    words_json_path = os.path.join(audio_dir, words_name)
     font_path = os.path.join(base_proj, "Lato-Black.ttf")
     
     task_args = []
@@ -642,9 +651,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--manga", required=True); parser.add_argument("--chapter"); parser.add_argument("--pdf", required=True); parser.add_argument("--mode", default="both")
     parser.add_argument("--master", action="store_true"); parser.add_argument("--chapters", nargs="+")
+    parser.add_argument("--suffix", default="")
     args = parser.parse_args()
     
     if args.master and args.chapters: assemble_master_recap(args.manga, args.chapters)
     else:
         if args.mode in ["full", "both"]: assemble_video(args.manga, args.chapter, args.pdf, mode="full")
-        if args.mode in ["short", "both"]: assemble_video(args.manga, args.chapter, args.pdf, mode="short")
+        if args.mode in ["short", "both"]: assemble_video(args.manga, args.chapter, args.pdf, mode="short", suffix=args.suffix)

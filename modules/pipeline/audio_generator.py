@@ -156,21 +156,23 @@ async def generate_audio_for_pages(parsed_pages, output_folder):
     await asyncio.gather(*tasks)
     print()
 
-async def generate_short_audio(script_path, output_folder):
+async def generate_short_audio(script_path, output_folder, suffix=""):
     import json
     os.makedirs(output_folder, exist_ok=True)
-    out_path = os.path.join(output_folder, "SHORT_FULL.mp3")
-    json_path = os.path.join(output_folder, "SHORT_FULL_words.json")
+    out_name = f"SHORT_FULL_{suffix}.mp3" if suffix else "SHORT_FULL.mp3"
+    json_name = f"SHORT_FULL_{suffix}_words.json" if suffix else "SHORT_FULL_words.json"
+    out_path = os.path.join(output_folder, out_name)
+    json_path = os.path.join(output_folder, json_name)
     
     if os.path.exists(out_path) and os.path.exists(json_path):
-        print("Short Audio y word boundaries: Ya existen.")
+        print(f"Short Audio y word boundaries ({out_name}): Ya existen.")
         return
-
+ 
     if not os.path.exists(script_path):
         print(f"Aviso: No se encontró guion short en {script_path}")
         return
-
-    print("Generando Audio y Word Boundaries para SHORT...")
+ 
+    print(f"Generando Audio y Word Boundaries para SHORT ({out_name})...")
     with open(script_path, "r", encoding="utf-8") as f:
         content = f.read()
     
@@ -200,12 +202,13 @@ async def generate_short_audio(script_path, output_folder):
         print(f"Word boundaries guardados: {json_path}")
     except Exception as e:
         print(f"Error en Short Audio: {e}")
-
+ 
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--manga", required=True)
     parser.add_argument("--chapter", required=True)
     parser.add_argument("--mode", choices=["full", "short", "both"], default="both")
+    parser.add_argument("--suffix", default="")
     args = parser.parse_args()
     
     # Ruta absoluta al proyecto
@@ -224,11 +227,16 @@ async def main():
             await generate_audio_for_pages(data, base_out)
             
     if args.mode in ["short", "both"]:
-        short_script = os.path.join(base_in, "Short_guion_ESP.txt")
+        script_name = f"Short_guion_ESP_{args.suffix}.txt" if args.suffix else "Short_guion_ESP.txt"
+        short_script = os.path.join(base_in, script_name)
         if not os.path.exists(short_script):
-            short_script = os.path.join(base_in, "Short_guion_raw.txt")
+            raw_name = f"Short_guion_raw_{args.suffix}.txt" if args.suffix else "Short_guion_raw.txt"
+            short_script = os.path.join(base_in, raw_name)
+            if not os.path.exists(short_script):
+                specific_name = f"Short_guion_{args.suffix}.txt" if args.suffix else "Short_guion.txt"
+                short_script = os.path.join(base_in, specific_name)
             
-        await generate_short_audio(short_script, base_out)
-
+        await generate_short_audio(short_script, base_out, suffix=args.suffix)
+ 
 if __name__ == "__main__":
     asyncio.run(main())

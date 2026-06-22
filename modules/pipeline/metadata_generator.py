@@ -25,8 +25,7 @@ def clean_manga_title(folder_name):
     return " ".join(folder_name.replace("__", " ").replace("_", " ").split()).strip()
 
 MODELS_TO_TRY = [
-    'gemini-2.5-flash-lite',
-    'gemini-2.5-flash'
+    'gemini-2.5-flash-lite'
 ]
 
 def get_manga_short_name(manga_name):
@@ -84,6 +83,7 @@ def generate_metadata(manga_name, start_cap, end_cap, part_num=None):
         success = False
         # Intentar con todas las claves si falla por cuota
         attempts_without_sleep = 0
+        sleep_cycles = 0
         while True:
             try:
                 model = genai.GenerativeModel(model_name)
@@ -101,6 +101,10 @@ def generate_metadata(manga_name, start_cap, end_cap, part_num=None):
                     api_rotator.report_failed_key(failed_key)
                     attempts_without_sleep += 1
                     if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                        sleep_cycles += 1
+                        if sleep_cycles > 2:
+                            print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
+                            break
                         print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                         import time
                         time.sleep(60)
@@ -176,6 +180,10 @@ if __name__ == "__main__":
         
         REQUIREMENTS:
         1. "hook": A viral and catchy title (max 50 characters, Spanish). Use #Shorts.
+           CRITICAL TITLE RULES:
+           - MUST prefer starting the title with a question mark (e.g., "¿...?").
+           - MUST prefer including extreme intrigue words (in uppercase) such as: "MÁS DÉBIL", "OP", "REGRESA", "VIVE", "TRAICIONADO", "ERROR FATAL", "VENGANZA SANGRIENTA", "MURIÓ 100 VECES".
+           - MUST include at least one relevant emoticon/emoji (e.g., 😱, 🤯, 💔, 😈, 😭).
         2. "description": A very brief and punchy description with hashtags like #manga #recap #shorts.
         
         Output ONLY a JSON object in Spanish.
@@ -185,6 +193,7 @@ if __name__ == "__main__":
         for model_name in MODELS_TO_TRY:
             success = False
             attempts_without_sleep = 0
+            sleep_cycles = 0
             while True:
                 try:
                     model = genai.GenerativeModel(model_name)
@@ -202,6 +211,10 @@ if __name__ == "__main__":
                         api_rotator.report_failed_key(failed_key)
                         attempts_without_sleep += 1
                         if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                            sleep_cycles += 1
+                            if sleep_cycles > 2:
+                                print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
+                                break
                             print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                             import time
                             time.sleep(60)

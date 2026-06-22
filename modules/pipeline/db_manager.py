@@ -359,7 +359,16 @@ def is_short_video_created(manga):
     cursor.execute('SELECT video_created FROM shorts WHERE manga = ?', (manga,))
     row = cursor.fetchone()
     conn.close()
-    return row[0] == 1 if row and row[0] is not None else False
+    return row[0] >= 1 if row and row[0] is not None else False
+
+def is_both_short_videos_created(manga):
+    manga = manga.replace(' ', '_')
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT video_created FROM shorts WHERE manga = ?', (manga,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] >= 2 if row and row[0] is not None else False
 
 def mark_short_video_created(manga, created=1):
     manga = manga.replace(' ', '_')
@@ -381,20 +390,7 @@ def get_last_scheduled_short_date():
     conn.close()
     return row[0] if row else None
 
-def mark_short_as_uploaded_with_date(manga, youtube_id, scheduled_date):
-    manga = manga.replace(' ', '_')
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE shorts 
-        SET is_uploaded = 1, youtube_id = ?, scheduled_date = ?
-        WHERE manga = ?
-    ''', (youtube_id, scheduled_date, manga))
-    conn.commit()
-    print(f"  [DB_MANAGER] Short de '{manga}' marcado como subido con éxito (Programado: {scheduled_date}).")
-    conn.close()
-
-def mark_short_as_uploaded_with_date_step2(manga, youtube_id, scheduled_date):
+def mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date, step):
     manga = manga.replace(' ', '_')
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -407,12 +403,18 @@ def mark_short_as_uploaded_with_date_step2(manga, youtube_id, scheduled_date):
     
     cursor.execute('''
         UPDATE shorts 
-        SET is_uploaded = 2, youtube_id = ?, scheduled_date = ?
+        SET is_uploaded = ?, youtube_id = ?, scheduled_date = ?
         WHERE manga = ?
-    ''', (new_id, scheduled_date, manga))
+    ''', (step, new_id, scheduled_date, manga))
     conn.commit()
-    print(f"  [DB_MANAGER] Short de '{manga}' marcado como subido con éxito segunda vez (Programado: {scheduled_date}).")
+    print(f"  [DB_MANAGER] Short de '{manga}' marcado como subido con éxito (Paso {step}/4) (Programado: {scheduled_date}).")
     conn.close()
+
+def mark_short_as_uploaded_with_date(manga, youtube_id, scheduled_date):
+    mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date, 1)
+
+def mark_short_as_uploaded_with_date_step2(manga, youtube_id, scheduled_date):
+    mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date, 2)
 
 def mark_short_as_uploaded_single(manga, youtube_id, scheduled_date):
     manga = manga.replace(' ', '_')

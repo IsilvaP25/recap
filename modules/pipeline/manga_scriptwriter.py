@@ -38,8 +38,7 @@ SAFETY_SETTINGS = [
 ]
 
 MODELS_TO_TRY = [
-    'gemini-2.5-flash-lite',
-    'gemini-2.5-flash'
+    'gemini-2.5-flash-lite'
 ]
 
 GENERATION_CONFIG = {
@@ -151,6 +150,7 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
             
             # Intentar con todas las claves disponibles si falla por cuota
             attempts_without_sleep = 0
+            sleep_cycles = 0
             while True:
                 try:
                     model = genai.GenerativeModel(
@@ -201,6 +201,11 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
                         api_rotator.report_failed_key(failed_key)
                         attempts_without_sleep += 1
                         if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                            sleep_cycles += 1
+                            if sleep_cycles > 2:
+                                print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Intentando siguiente modelo...")
+                                to_rem.append(model_name)
+                                break
                             print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                             time.sleep(60)
                             attempts_without_sleep = 0
@@ -310,6 +315,7 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
             print(f"Intentando Short (texto) con: {model_name}...")
             success = False
             attempts_without_sleep = 0
+            sleep_cycles = 0
             while True:
                 try:
                     model = genai.GenerativeModel(
@@ -359,6 +365,10 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                         api_rotator.report_failed_key(failed_key)
                         attempts_without_sleep += 1
                         if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                            sleep_cycles += 1
+                            if sleep_cycles > 2:
+                                print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
+                                break
                             print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                             time.sleep(60)
                             attempts_without_sleep = 0
@@ -389,6 +399,7 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
         print(f"Intentando Short (imágenes) con: {model_name}...")
         success = False
         attempts_without_sleep = 0
+        sleep_cycles = 0
         while True:
             try:
                 model = genai.GenerativeModel(
@@ -442,6 +453,10 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                     api_rotator.report_failed_key(failed_key)
                     attempts_without_sleep += 1
                     if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                        sleep_cycles += 1
+                        if sleep_cycles > 2:
+                            print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
+                            break
                         print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                         time.sleep(60)
                         attempts_without_sleep = 0
@@ -480,6 +495,7 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                 print(f"Intentando Short (texto de respaldo) con: {model_name}...")
                 success = False
                 attempts_without_sleep = 0
+                sleep_cycles = 0
                 while True:
                     try:
                         model = genai.GenerativeModel(
@@ -529,6 +545,10 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                             api_rotator.report_failed_key(failed_key)
                             attempts_without_sleep += 1
                             if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                                sleep_cycles += 1
+                                if sleep_cycles > 2:
+                                    print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
+                                    break
                                 print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                                 time.sleep(60)
                                 attempts_without_sleep = 0
