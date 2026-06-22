@@ -37,13 +37,8 @@ def iniciar_flujo(apagar_al_final=False):
         print("\n=== MENÚ MODO SHORTS ===")
         print("1. GENERAR GUION Y METADATOS (NO MINIATURAS)")
         print("2. GENERAR AUDIO Y VIDEO SHORT")
-        print("3. SUBIR SHORTS A YOUTUBE (PROGRAMADOR DIARIO - DUPLICADO)")
-        print("4. PRODUCCIÓN AUTOMÁTICA COMPLETA (DUPLICADO)")
-        print("5. SUBIR SHORTS SIN DUPLICAR (1 subida, alterna 10am/3pm)")
-        print("6. PRODUCCIÓN AUTOMÁTICA SIN DUPLICAR (Todo en Uno)")
-        print("7. LIMPIAR VIDEOS DUPLICADOS EN YOUTUBE (AUTOMÁTICO)")
-        print("8. COMPLETAR VIDEOS Y SUBIDAS DE OLLAMA PENDIENTES (Temporal)")
-        print("9. Volver al menú principal")
+        print("3. SUBIR SHORTS A YOUTUBE (OLLAMA INTEGRADO)")
+        print("4. Volver al menú principal")
         
         opt = input("\nSelecciona una opción: ")
         tarea_realizada = False
@@ -55,24 +50,9 @@ def iniciar_flujo(apagar_al_final=False):
             iniciar_generacion_videos(mangas_disponibles, pdf_base)
             tarea_realizada = True
         elif opt == "3":
-            iniciar_subida_shorts()
+            iniciar_subida_shorts_unificada(mangas_disponibles, pdf_base)
             tarea_realizada = True
         elif opt == "4":
-            iniciar_produccion_automatica(mangas_disponibles, pdf_base)
-            tarea_realizada = True
-        elif opt == "5":
-            iniciar_subida_shorts_sin_duplicar()
-            tarea_realizada = True
-        elif opt == "6":
-            iniciar_produccion_automatica_sin_duplicar(mangas_disponibles, pdf_base)
-            tarea_realizada = True
-        elif opt == "7":
-            iniciar_limpieza_duplicados()
-            tarea_realizada = True
-        elif opt == "8":
-            iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base)
-            tarea_realizada = True
-        elif opt == "9":
             break
         else:
             print("Opción no válida.")
@@ -675,6 +655,43 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
             print(f"  [ERROR] Error durante subida Ollama 2: {e}")
             return False
     return False
+
+def iniciar_subida_shorts_unificada(mangas_disponibles, pdf_base):
+    print("\n" + "="*50)
+    print("   --- SUBIR SHORTS A YOUTUBE (OLLAMA INTEGRADO) ---")
+    print("="*50)
+    
+    # Identificar mangas con Gemini subido (is_uploaded == 2 o is_uploaded == 3) pero Ollama pendiente
+    import sqlite3
+    mangas_pendientes = []
+    conn = sqlite3.connect(db_manager.DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT manga, is_uploaded FROM shorts WHERE is_uploaded IN (2, 3)')
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # Filtrar solo si el manga está en los disponibles
+    for row in rows:
+        manga_name_db = row[0]
+        for m_disp in mangas_disponibles:
+            if m_disp.replace(' ', '_') == manga_name_db.replace(' ', '_'):
+                mangas_pendientes.append(m_disp)
+                break
+                
+    if mangas_pendientes:
+        print(f"\n⚠️ [AVISO] Se detectaron {len(mangas_pendientes)} shorts con subidas de Ollama pendientes:")
+        for i, m in enumerate(mangas_pendientes, 1):
+            print(f" {i}. {m.replace('_', ' ')}")
+        print("\n[POLÍTICA] No se subirán nuevos videos hasta ponerse al día con los shorts pendientes de Ollama.")
+        
+        confirm = input("\n¿Deseas iniciar el completado de Ollama pendiente ahora? (s/n): ").lower()
+        if confirm == 's':
+            iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base)
+        else:
+            print("Operación cancelada. Debes completar las subidas de Ollama pendientes antes de continuar.")
+    else:
+        print("\n✅ [OK] No hay subidas de Ollama pendientes. Procediendo con la subida de nuevos shorts...")
+        iniciar_subida_shorts()
 
 def iniciar_subida_shorts():
     import time
