@@ -271,6 +271,14 @@ def generate_thumbnail(manga_name, start_cap, end_cap, non_interactive=False):
         except Exception as e:
             print(f"  [AVISO DB] No se pudo obtener la parte de la DB: {e}")
             
+        # Determinar si es una compilación / maratón
+        try:
+            is_compilation = (float(end_cap) - float(start_cap)) > 15
+        except:
+            is_compilation = False
+            
+        part_label = "MARATÓN" if is_compilation else f"PARTE {part_num}"
+            
         # Intentar obtener el título del video de metadata.json
         video_title = manga_name.replace("_", " ").upper()
         video_title_sub = ""
@@ -309,7 +317,7 @@ def generate_thumbnail(manga_name, start_cap, end_cap, non_interactive=False):
                 font_title = font_sub = font_part = font_caps = ImageFont.load_default()
                 
             # 1. PARTE X (Dorado/Amarillo, esquina superior izquierda)
-            draw_text_with_shadow(draw, (50, 40), f"PARTE {part_num}", font_part, (255, 215, 0), (0, 0, 0))
+            draw_text_with_shadow(draw, (50, 40), part_label, font_part, (255, 215, 0), (0, 0, 0))
             
             # 2. Título de dos líneas
             draw_text_with_shadow(draw, (50, 110), video_title, font_title, (255, 255, 255), (0, 0, 0), shadow_offset=6)
@@ -335,7 +343,7 @@ def generate_thumbnail(manga_name, start_cap, end_cap, non_interactive=False):
                 display_title = display_title[:19] + "..."
             draw_text_with_shadow(draw, (50, 100), display_title, font_title, (255, 255, 255), (0, 0, 0))
             
-            draw_text_with_shadow(draw, (50, 200), f"PARTE {part_num}", font_part, (255, 215, 0), (0, 0, 0))
+            draw_text_with_shadow(draw, (50, 200), part_label, font_part, (255, 215, 0), (0, 0, 0))
             
             caps_text = f"CAPS {start_cap}-{end_cap}"
             draw.rectangle([40, 350, 600, 500], fill=(255, 0, 0))
