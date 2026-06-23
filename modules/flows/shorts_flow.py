@@ -37,7 +37,7 @@ def iniciar_flujo(apagar_al_final=False):
         print("1. GENERAR GUION Y METADATOS (NO MINIATURAS)")
         print("2. GENERAR AUDIO Y VIDEO SHORT")
         print("3. SUBIR SHORTS A YOUTUBE (OLLAMA INTEGRADO)")
-        print("4. [TEMPORAL] EMERGENCIAS OLLAMA (GENERAR TODO LO FALTANTE)")
+        print("4. REPROGRAMAR Y RELLENAR SLOTS 8PM CON BACKLOG")
         print("5. Volver al menú principal")
         
         opt = input("\nSelecciona una opción: ")
@@ -53,7 +53,7 @@ def iniciar_flujo(apagar_al_final=False):
             iniciar_subida_shorts_unificada(mangas_disponibles, pdf_base)
             tarea_realizada = True
         elif opt == "4":
-            iniciar_regeneracion_emergencia_ollama(mangas_disponibles)
+            iniciar_reprogramacion_y_relleno_shorts(mangas_disponibles, pdf_base)
             tarea_realizada = True
         elif opt == "5":
             break
@@ -1542,3 +1542,307 @@ def procesar_subida_ollama_pendiente(manga, base_proj, uploader_path, mock_youtu
             return False
             
     return False
+
+def obtener_fechas_ocupadas():
+    import sqlite3
+    import datetime
+    conn = sqlite3.connect(db_manager.DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT scheduled_date FROM shorts WHERE scheduled_date IS NOT NULL')
+    rows = cursor.fetchall()
+    conn.close()
+    
+    fechas = set()
+    for r in rows:
+        if r[0]:
+            try:
+                dt = datetime.datetime.fromisoformat(r[0])
+                fechas.add(dt.strftime("%Y-%m-%dT%H:%M"))
+            except Exception:
+                pass
+    return fechas
+
+def es_slot_ocupado(dt_ollama, fechas_ocupadas):
+    s = dt_ollama.strftime("%Y-%m-%dT%H:%M")
+    return s in fechas_ocupadas
+
+def reprogramar_video_youtube(youtube, video_id, scheduled_date_iso):
+    if youtube == "MOCK_SERVICE" or youtube is None:
+        print(f"  [MOCK YouTube] Reprogramado video {video_id} para {scheduled_date_iso}")
+        return True
+    try:
+        youtube.videos().update(
+            part="status",
+            body={
+                "id": video_id,
+                "status": {
+                    "privacyStatus": "private",
+                    "publishAt": scheduled_date_iso
+                }
+            }
+        ).execute()
+        print(f"  [YouTube] [OK] Video {video_id} reprogramado para {scheduled_date_iso}")
+        return True
+    except Exception as e:
+        print(f"  [YouTube] [ERROR] No se pudo reprogramar video {video_id}: {e}")
+        return False
+
+def asegurar_video_ollama(manga, base_proj, pdf_path):
+    scripts_dir = os.path.join(base_proj, "outputs", manga, "Scripts")
+    gemini_script_esp = os.path.join(scripts_dir, "Short_guion_ESP.txt")
+    gemini_script_raw = os.path.join(scripts_dir, "Short_guion_raw.txt")
+    
+    orig_script_rel = None
+    if os.path.exists(gemini_script_esp):
+        orig_script_rel = f"outputs/{manga}/Scripts/Short_guion_ESP.txt"
+    elif os.path.exists(gemini_script_raw):
+        orig_script_rel = f"outputs/{manga}/Scripts/Short_guion_raw.txt"
+        
+    if not orig_script_rel:
+        print(f"  [AVISO] Guion original de Gemini no encontrado para {manga}.")
+        return False
+        
+    ollama_script_path = os.path.join(scripts_dir, "Short_guion_OLLAMA.txt")
+    ollama_meta_path = os.path.join(scripts_dir, "short_youtube_data_OLLAMA.json")
+    
+    script_ok = True
+    if not os.path.exists(ollama_script_path) or not os.path.exists(ollama_meta_path):
+        print("  [AVISO] Guion o metadatos de Ollama no encontrados en disco. Generándolos...")
+        script_ok = run_pipeline_step(
+            f"Reescritura Ollama {manga}",
+            [
+                "modules/ollama/ollama_rewriter.py",
+                "--script-path", orig_script_rel,
+                "--output-script", ollama_script_path,
+                "--output-meta", ollama_meta_path,
+                "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json",
+                "--manga", manga
+            ]
+        )
+        
+    if not script_ok:
+        print("  [ERROR] No se pudo generar la reescritura de Ollama.")
+        return False
+        
+    videos_dir = os.path.join(base_proj, "outputs", manga, "VIDEOS")
+    video_ollama = os.path.join(videos_dir, "Short_1_OLLAMA.mp4")
+    
+    video_ok = True
+    if not os.path.exists(video_ollama):
+        print("  [AVISO] Video de Ollama no encontrado en disco. Generando multimedia...")
+        audio_ok = run_pipeline_step(
+            f"Audio Short Ollama {manga}",
+            ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
+        )
+        if audio_ok:
+            video_ok = run_pipeline_step(
+                f"Video Short Ollama {manga}",
+                ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
+            )
+            if video_ok:
+                db_manager.mark_short_video_created(manga, 2)
+            else:
+                print("  [ERROR] Falló el ensamblaje del video de Ollama.")
+                video_ok = False
+        else:
+            print("  [ERROR] Falló la generación del audio de Ollama.")
+            video_ok = False
+            
+    return video_ok
+
+def iniciar_reprogramacion_y_relleno_shorts(mangas_disponibles, pdf_base):
+    print("\n" + "="*50)
+    print("   --- REPROGRAMACIÓN Y RELLENO DE SHORTS (8:00 PM) ---")
+    print("="*50)
+    
+    # 1. Validar e importar uploader de YouTube
+    try:
+        base_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        parent_dir = os.path.dirname(base_proj)
+        if parent_dir not in sys.path:
+            sys.path.append(parent_dir)
+        from modules.subida import youtube_uploader
+    except Exception as e:
+        print(f"  [ERROR] No se pudo importar el modulo uploader: {e}")
+        return
+        
+    mock_youtube = os.getenv("MOCK_YOUTUBE", "false").lower() == "true"
+    channel_name = None
+    yt_client = None
+    try:
+        if mock_youtube:
+            print("\n[MOCK YouTube] Validando credenciales...")
+            channel_name = os.getenv("MOCK_CHANNEL_NAME", "Canal de Pruebas (Mock)")
+            print(f"  [OK] [MOCK YouTube] Credenciales validadas con exito. Canal: {channel_name}\n")
+        else:
+            print("\n[YouTube] Validando credenciales...")
+            yt_client = youtube_uploader.get_authenticated_service()
+            if yt_client is None:
+                raise ValueError("No se pudo obtener el servicio de YouTube autenticado.")
+            channel_name = youtube_uploader.get_channel_info(yt_client)
+            print(f"  [OK] [YouTube] Credenciales validadas con exito. Canal: {channel_name}\n")
+    except Exception as e:
+        print(f"  [ERROR] Autenticacion fallida: {e}")
+        return
+
+    # 2. Obtener mangas del "backlog" (is_uploaded = 2 y youtube_id sin coma)
+    import sqlite3
+    import datetime
+    import time
+    
+    conn = sqlite3.connect(db_manager.DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT manga, youtube_id FROM shorts WHERE is_uploaded = 2 AND youtube_id NOT LIKE '%,%'")
+    mangas_backlog_db = cursor.fetchall()
+    conn.close()
+    
+    # Filtrar solo si el manga está en los disponibles
+    mangas_backlog = []
+    for row in mangas_backlog_db:
+        manga_name_db = row[0]
+        yt_id = row[1]
+        for m_disp in mangas_disponibles:
+            if m_disp.replace(' ', '_') == manga_name_db.replace(' ', '_'):
+                mangas_backlog.append((m_disp, yt_id))
+                break
+                
+    if not mangas_backlog:
+        print("No se encontraron mangas en el backlog (Gemini subido, Ollama pendiente) para rellenar.")
+        return
+        
+    print(f"Se encontraron {len(mangas_backlog)} mangas en el backlog para rellenar slots de las 8:00 PM.")
+    
+    # 3. Obtener las fechas ocupadas en el sistema para evitar colisiones
+    fechas_ocupadas = obtener_fechas_ocupadas()
+    
+    # 4. Generar slots secuenciales desde "now" y buscar slots de las 8:00 PM vacíos
+    last_scheduled_str = db_manager.get_last_scheduled_short_date()
+    next_dt_str = obtener_siguiente_slot_gemini(last_scheduled_str)
+    dt = datetime.datetime.fromisoformat(next_dt_str)
+    
+    backlog_idx = 0
+    uploader_path = os.path.join(base_proj, "modules", "subida", "youtube_uploader.py")
+    
+    try:
+        # Buscaremos slots hasta agotar el backlog
+        for _ in range(365):
+            if backlog_idx >= len(mangas_backlog):
+                print("\n[OK] Se han rellenado todos los slots posibles con el backlog disponible.")
+                break
+                
+            # Solo rellenamos slots de las 8:00 PM (hora 20)
+            if dt.hour == 20:
+                dt_ollama = dt + datetime.timedelta(minutes=30)
+                # Verificar si ya está ocupado en la BD
+                if not es_slot_ocupado(dt_ollama, fechas_ocupadas):
+                    # Encontramos un slot de 8:00 PM vacío!
+                    manga, gemini_id = mangas_backlog[backlog_idx]
+                    print(f"\n>>> RELLENANDO SLOT Vacío 8:00 PM para {dt.date()} con {manga.replace('_', ' ')}")
+                    
+                    pdf_dir = os.path.join(pdf_base, manga)
+                    pdf_path = os.path.join(pdf_dir, "Capitulo_1.pdf")
+                    if not os.path.exists(pdf_path):
+                        pdf_path = os.path.join(pdf_dir, "1.pdf")
+                    if not os.path.exists(pdf_path):
+                        all_pdfs = sorted([f for f in os.listdir(pdf_dir) if f.endswith(".pdf")], key=extract_num)
+                        if all_pdfs:
+                            pdf_path = os.path.join(pdf_dir, all_pdfs[0])
+                        else:
+                            pdf_path = None
+                            
+                    if not pdf_path:
+                        print(f"  [ERROR] No se encontró PDF para {manga}. Saltando este manga del backlog...")
+                        backlog_idx += 1
+                        continue
+                        
+                    # A. Asegurar que el video de Ollama existe localmente
+                    video_ok = asegurar_video_ollama(manga, base_proj, pdf_path)
+                    if not video_ok:
+                        print(f"  [ERROR] No se pudo asegurar el video de Ollama para {manga}. Saltando...")
+                        backlog_idx += 1
+                        continue
+                        
+                    # B. Reprogramar el video de Gemini existente en YouTube a la nueva hora
+                    gemini_date_iso = dt.isoformat()
+                    print(f"  Reprogramando Gemini ({gemini_id}) para: {gemini_date_iso}")
+                    yt_client_for_manga = None if mock_youtube else yt_client
+                    reprog_ok = reprogramar_video_youtube(yt_client_for_manga, gemini_id, gemini_date_iso)
+                    if not reprog_ok:
+                        print(f"  [ERROR] Falló la reprogramación de Gemini. Saltando...")
+                        backlog_idx += 1
+                        continue
+                        
+                    # C. Subir el video de Ollama a la nueva hora (dt + 30 mins)
+                    ollama_date_iso = dt_ollama.isoformat()
+                    print(f"  Subiendo Ollama para: {ollama_date_iso}")
+                    
+                    video_path_ollama = os.path.join(base_proj, "outputs", manga, "VIDEOS", "Short_1_OLLAMA.mp4")
+                    metadata_path_ollama = os.path.join(base_proj, "outputs", manga, "Scripts", "short_youtube_data_OLLAMA.json")
+                    
+                    command = [
+                        sys.executable, uploader_path, 
+                        "--video", video_path_ollama, 
+                        "--manga", manga, 
+                        "--schedule", ollama_date_iso,
+                        "--json", metadata_path_ollama
+                    ]
+                    env = os.environ.copy()
+                    env["PYTHONPATH"] = base_proj + os.pathsep + env.get("PYTHONPATH", "")
+                    output_str = run_upload_subprocess(command, env)
+                    
+                    ollama_id = None
+                    if mock_youtube:
+                        ollama_id = f"mock_yt_o_repro_{int(time.time())}"
+                    else:
+                        match = re.search(r'Video subido con ID:\s*([a-zA-Z0-9_-]+)', output_str)
+                        if match:
+                            ollama_id = match.group(1)
+                        else:
+                            match_url = re.search(r'https://youtu\.be/([a-zA-Z0-9_-]+)', output_str)
+                            if match_url:
+                                ollama_id = match_url.group(1)
+                                
+                    if not ollama_id:
+                        print("  [ERROR] No se pudo determinar el ID de YouTube de Ollama.")
+                        backlog_idx += 1
+                        continue
+                        
+                    print(f"  [OK] Subida de Ollama exitosa. ID: {ollama_id}")
+                    
+                    # D. Marcar en la BD como completamente subido (is_uploaded = 2, youtube_id concatenado)
+                    new_youtube_id = f"{gemini_id},{ollama_id}"
+                    conn = sqlite3.connect(db_manager.DB_PATH)
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        UPDATE shorts
+                        SET is_uploaded = 2, youtube_id = ?, scheduled_date = ?
+                        WHERE manga = ?
+                    ''', (new_youtube_id, ollama_date_iso, manga.replace(' ', '_')))
+                    conn.commit()
+                    conn.close()
+                    print(f"  [DB_MANAGER] Registro completado en BD (is_uploaded=2, Date: {ollama_date_iso})")
+                    
+                    # E. Esperar procesamiento de Ollama y limpiar videos locales
+                    if mock_youtube:
+                        processed = wait_for_processing(None, ollama_id)
+                    else:
+                        processed = wait_for_processing(yt_client_for_manga, ollama_id)
+                        
+                    if processed:
+                        video_path_gemini = os.path.join(base_proj, "outputs", manga, "VIDEOS", "Short_1.mp4")
+                        delete_local_video(video_path_gemini)
+                        delete_local_video(video_path_ollama)
+                        
+                    # Avanzar al siguiente manga del backlog
+                    backlog_idx += 1
+                    
+            # Mover dt al siguiente slot
+            next_dt_str = obtener_siguiente_slot_gemini(dt.isoformat())
+            dt = datetime.datetime.fromisoformat(next_dt_str)
+            
+    except QuotaExceededException as e:
+        print(f"\n[CUOTA EXCEDIDA] Se detiene la reprogramación y relleno de shorts: {e}")
+    except Exception as e:
+        print(f"\n[ERROR] Ocurrió un error inesperado: {e}")
+        
+    print("\n=== PROCESO DE REPROGRAMACIÓN Y RELLENO TERMINADO ===")
