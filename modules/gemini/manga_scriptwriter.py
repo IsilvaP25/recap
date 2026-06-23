@@ -65,15 +65,18 @@ def clean_garbage_text(text):
         text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.MULTILINE).strip()
     return text
 
-def get_system_instruction(language="es"):
+def get_system_instruction(language="es", rag_context=""):
     lore = get_lore_context()
     if language == "es":
         lang_instruction = "Escribe la narración en ESPAÑOL LATINO NEUTRO. El estilo debe ser altamente entretenido y dinámico, ideal para un narrador de resúmenes de manga en YouTube."
     else:
         lang_instruction = "Write the narration in ENGLISH. The style should be highly engaging and dynamic, ideal for a YouTube manga recap narrator."
         
+    rag_part = f"\nMemoria histórica de capítulos anteriores:\n{rag_context}\n" if rag_context else ""
+    
     return f"""
 Senior Scriptwriter. Lore (Spanish): {lore}.
+{rag_part}
 {lang_instruction}
 ABSOLUTE RULE: Output ONLY the story narration text and page markers.
 ZERO TOLERANCE: Do NOT include 'Cover', 'Page', 'Image', 'Flashback', or any visual/technical description.
@@ -119,6 +122,15 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
     if limit_pages: total_pages = min(total_pages, limit_pages)
     print(f"--- Auditoría de Generación: {manga_name} Cap {chapter_num} ({total_pages} pág) ---")
 
+    # Obtener memoria de capítulos anteriores usando RAG (solo para videos largos)
+    rag_context = ""
+    try:
+        from modules.gemini import vector_manager
+        consulta = f"historia, personajes principales y eventos importantes del manga {manga_name}"
+        rag_context = vector_manager.obtener_contexto_historico(manga_name, chapter_num, consulta, top_k=3)
+    except Exception as re:
+        print(f"  [RAG] [AVISO] No se pudo recuperar contexto de lore: {re}")
+
     active_models = list(MODELS_TO_TRY)
     while True:
         pending = [i+1 for i in range(total_pages) if not db_manager.get_page_script(manga_name, chapter_num, i+1)]
@@ -155,7 +167,7 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
                 try:
                     model = genai.GenerativeModel(
                         model_name, 
-                        system_instruction=get_system_instruction(language),
+                        system_instruction=get_system_instruction(language, rag_context=rag_context),
                         safety_settings=SAFETY_SETTINGS,
                         generation_config=GENERATION_CONFIG
                     )
@@ -242,6 +254,13 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, "w", encoding="utf-8") as f: f.write("\n\n".join(cons))
     print(f"Guion IDENTICO y verificado guardado: {output_file}")
+
+    # Generar memoria histórica y guardarla en SQLite y base vectorial ChromaDB
+    try:
+        generate_historical_summary(manga_name, chapter_num)
+    except Exception as ge:
+        print(f"  [HISTORIA] [AVISO] Error al actualizar memoria histórica: {ge}")
+
     return True
 
 def generate_short_summary(pdf_path, manga_name, output_file, force=False, language="es"):
@@ -594,6 +613,14 @@ def generate_historical_summary(manga_name, chapter_num):
         response = model.generate_content(prompt)
         db_manager.save_story_history(manga_name, chapter_num, response.text)
         print(f"  [OK] History updated for chapter {chapter_num}")
+        
+        # Guardar también en la base de datos vectorial ChromaDB para RAG (solo para videos largos)
+        try:
+            from modules.gemini import vector_manager
+            vector_manager.guardar_resumen_capitulo(manga_name, chapter_num, response.text)
+        except Exception as ve:
+            print(f"  [VECTORS] [ERROR] No se pudo indexar el resumen del capítulo en ChromaDB: {ve}")
+            
     except Exception as e:
         print(f"  [WARNING] Could not update history: {e}")
 

@@ -15,6 +15,7 @@ token.json
 # Local Databases
 database/*.db
 database/*.sqlite3
+database/vectors/
 
 # Large asset and download directories
 pdf_storage/
