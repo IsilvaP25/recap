@@ -50,14 +50,16 @@ def detectar_y_procesar_maraton(manga_name, p_num, base_proj, uploader_path):
     end_cap = None
     
     for part_num, start_c, end_c in parts:
-        part_dir = os.path.join(base_proj, "outputs", manga_name, "FINAL_PUBLICATION", f"Recap_Parte_{part_num}_Caps_{start_c}_al_{end_c}")
+        formatted_start = format_cap(start_c)
+        formatted_end = format_cap(end_c)
+        part_dir = os.path.join(base_proj, "outputs", manga_name, "FINAL_PUBLICATION", f"Recap_Parte_{part_num}_Caps_{formatted_start}_al_{formatted_end}")
         video_path = os.path.join(part_dir, "video_final.mp4")
         if not os.path.exists(video_path):
             print(f"  [AUTO-MARATÓN] [ERROR] No se encontró el video final de la Parte {part_num} en: {video_path}")
             return
-        video_files.append((part_num, video_path, start_c, end_c))
+        video_files.append((part_num, video_path, formatted_start, formatted_end))
         if part_num == 5:
-            end_cap = end_c
+            end_cap = formatted_end
             
     # Calcular marcas de tiempo (timestamps) acumulativas
     timestamps = []
@@ -93,7 +95,7 @@ def detectar_y_procesar_maraton(manga_name, p_num, base_proj, uploader_path):
     timestamps_text = "\n".join(timestamps)
     
     # 2. Generar metadatos clickbait usando la premisa de la Parte 1
-    part1_dir = os.path.join(base_proj, "outputs", manga_name, "FINAL_PUBLICATION", f"Recap_Parte_1_Caps_{parts[0][1]}_al_{parts[0][2]}")
+    part1_dir = os.path.join(base_proj, "outputs", manga_name, "FINAL_PUBLICATION", f"Recap_Parte_1_Caps_{format_cap(parts[0][1])}_al_{format_cap(parts[0][2])}")
     part1_json = os.path.join(part1_dir, "youtube_data.json")
     
     part1_desc = ""
@@ -290,6 +292,20 @@ def iniciar_flujo():
     
         for manga_name in mangas_a_procesar:
             print(f"\n>>> TRABAJANDO EN: {manga_name.replace('_', ' ')}")
+            
+            # --- 1. CHEQUEO AUTOMÁTICO DE MARATÓN PENDIENTE ---
+            # Si ya se subió la Parte 5 (is_uploaded = 1) pero no existe la carpeta/flag de la maratón,
+            # la procesamos automáticamente al inicio de este manga.
+            compilation_dir = os.path.join(base_proj, "outputs", manga_name, "FINAL_PUBLICATION", "Maraton_Parte_1_al_5")
+            if not os.path.exists(os.path.join(compilation_dir, "uploaded.flag")):
+                import sqlite3
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT is_uploaded FROM pipeline_parts WHERE manga = ? AND part_number = 5", (manga_name,))
+                row = cursor.fetchone()
+                conn.close()
+                if row and row[0] == 1:
+                    detectar_y_procesar_maraton(manga_name, 5, base_proj, uploader_path)
             
             while True:
                 # Reservamos el slot si detectamos que hay algo que subir
