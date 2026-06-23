@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 base_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(os.path.join(base_proj, '.env'))
 
-from modules.pipeline import db_manager
+from modules import db_manager
 from modules.flows.common import run_pipeline_step, QuotaExceededException, ApiKeyExhaustedException
 
 def extract_num(fn):
@@ -32,13 +32,13 @@ def iniciar_flujo(apagar_al_final=False):
     if not mangas_disponibles:
         print("No hay mangas disponibles en pdf_storage.")
         return
-
-    while True:
+    while True:
         print("\n=== MENÚ MODO SHORTS ===")
         print("1. GENERAR GUION Y METADATOS (NO MINIATURAS)")
         print("2. GENERAR AUDIO Y VIDEO SHORT")
         print("3. SUBIR SHORTS A YOUTUBE (OLLAMA INTEGRADO)")
-        print("4. Volver al menú principal")
+        print("4. [TEMPORAL] EMERGENCIAS OLLAMA (GENERAR TODO LO FALTANTE)")
+        print("5. Volver al menú principal")
         
         opt = input("\nSelecciona una opción: ")
         tarea_realizada = False
@@ -53,6 +53,9 @@ def iniciar_flujo(apagar_al_final=False):
             iniciar_subida_shorts_unificada(mangas_disponibles, pdf_base)
             tarea_realizada = True
         elif opt == "4":
+            iniciar_regeneracion_emergencia_ollama(mangas_disponibles)
+            tarea_realizada = True
+        elif opt == "5":
             break
         else:
             print("Opción no válida.")
@@ -60,6 +63,40 @@ def iniciar_flujo(apagar_al_final=False):
         if tarea_realizada and apagar_al_final:
             print("\n[APAGADO] Tarea del submenú completada. Volviendo al menú principal para iniciar el apagado...")
             break
+ 
+def iniciar_regeneracion_emergencia_ollama(mangas_disponibles):
+    print("\n--- EMERGENCIAS OLLAMA: GENERAR TODO LO FALTANTE ---")
+    base_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    regenerados = 0
+    for manga in mangas_disponibles:
+        ollama_meta_path = os.path.join(base_proj, "outputs", manga, "Scripts", "short_youtube_data_OLLAMA.json")
+        ollama_script_path = os.path.join(base_proj, "outputs", manga, "Scripts", "Short_guion_OLLAMA.txt")
+        gemini_meta_path = os.path.join(base_proj, "outputs", manga, "Scripts", "short_youtube_data.json")
+        script_path = os.path.join(base_proj, "outputs", manga, "Scripts", "Short_guion_ESP.txt")
+        
+        # Si falta el metadato físico de Ollama O falta el guion reescrito de Ollama
+        if not os.path.exists(ollama_meta_path) or not os.path.exists(ollama_script_path):
+            if os.path.exists(gemini_meta_path) and os.path.exists(script_path):
+                print(f"  [EMERGENCIA] Faltan archivos de Ollama para {manga}. Generando a partir de Gemini...")
+                try:
+                    run_pipeline_step(
+                        f"Reescritura Ollama Emergencia {manga}",
+                        [
+                            "modules/ollama/ollama_rewriter.py",
+                            "--script-path", script_path,
+                            "--output-script", ollama_script_path,
+                            "--output-meta", ollama_meta_path,
+                            "--gemini-meta", gemini_meta_path,
+                            "--manga", manga
+                        ]
+                    )
+                    regenerados += 1
+                except Exception as e:
+                    print(f"  [ERROR] Falló la regeneración de {manga}: {e}")
+            else:
+                pass
+                
+    print(f"\n[OK] Emergencia finalizada. Se regeneraron {regenerados} packs de guion/metadatos de Ollama.")
 
 def iniciar_generacion_guiones(mangas_disponibles, pdf_base):
     print("\n--- GENERAR GUION Y METADATOS SHORT ---")
@@ -118,32 +155,33 @@ def iniciar_generacion_guiones(mangas_disponibles, pdf_base):
             # 1. Generar guion short en inglés y guardarlo en BD + archivos
             script_ok = run_pipeline_step(
                 f"Guion Short {manga}", 
-                ["modules/pipeline/manga_scriptwriter.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
+                ["modules/gemini/manga_scriptwriter.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
             )
             
             if script_ok:
                 # 2. Traducir guion short al español
                 trans_ok = run_pipeline_step(
                     f"Traducción Short {manga}", 
-                    ["modules/pipeline/script_translator.py", "--manga", manga, "--chapter", "1"]
+                    ["modules/guion_metadatos/script_translator.py", "--manga", manga, "--chapter", "1"]
                 )
                 
                 if trans_ok:
                     # 3. Generar metadatos del short (JSON)
                     meta_ok = run_pipeline_step(
                         f"Metadatos Short {manga}", 
-                        ["modules/pipeline/metadata_generator.py", "--manga", manga, "--short"]
+                        ["modules/gemini/metadata_generator.py", "--manga", manga, "--short"]
                     )
                     if meta_ok:
                         # 4. Generar reescritura y metadatos con Ollama
                         run_pipeline_step(
                             f"Reescritura Ollama {manga}",
                             [
-                                "modules/pipeline/ollama_rewriter.py",
+                                "modules/ollama/ollama_rewriter.py",
                                 "--script-path", f"outputs/{manga}/Scripts/Short_guion_ESP.txt",
                                 "--output-script", f"outputs/{manga}/Scripts/Short_guion_OLLAMA.txt",
                                 "--output-meta", f"outputs/{manga}/Scripts/short_youtube_data_OLLAMA.json",
-                                "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json"
+                                "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json",
+                                "--manga", manga
                             ]
                         )
                 else:
@@ -212,25 +250,25 @@ def iniciar_generacion_videos(mangas_disponibles, pdf_base):
         # 1. Generar audio para Gemini
         audio_ok = run_pipeline_step(
             f"Audio Short Gemini {manga}",
-            ["modules/pipeline/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short"]
+            ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short"]
         )
         
         # 2. Generar audio para Ollama
         audio_ollama_ok = run_pipeline_step(
             f"Audio Short Ollama {manga}",
-            ["modules/pipeline/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
+            ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
         )
         
         if audio_ok and audio_ollama_ok:
             # 3. Ensamblar video Gemini
             video_ok = run_pipeline_step(
                 f"Video Short Gemini {manga}",
-                ["modules/pipeline/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
+                ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
             )
             # 4. Ensamblar video Ollama
             video_ollama_ok = run_pipeline_step(
                 f"Video Short Ollama {manga}",
-                ["modules/pipeline/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
+                ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
             )
             
             if video_ok and video_ollama_ok:
@@ -705,7 +743,7 @@ def iniciar_subida_shorts():
         parent_dir = os.path.dirname(base_proj)
         if parent_dir not in sys.path:
             sys.path.append(parent_dir)
-        from api import youtube_uploader
+        from modules.subida import youtube_uploader
     except Exception as e:
         print(f"  [ERROR] No se pudo importar el modulo uploader del api: {e}")
         return
@@ -746,7 +784,7 @@ def iniciar_subida_shorts():
         print("Subida cancelada.")
         return
 
-    uploader_path = os.path.join(parent_dir, "api", "youtube_uploader.py")
+    uploader_path = os.path.join(base_proj, "modules", "subida", "youtube_uploader.py")
 
     try:
         for manga in pending_mangas:
@@ -769,7 +807,7 @@ def iniciar_produccion_automatica(mangas_disponibles, pdf_base):
         parent_dir = os.path.dirname(base_proj)
         if parent_dir not in sys.path:
             sys.path.append(parent_dir)
-        from api import youtube_uploader
+        from modules.subida import youtube_uploader
     except Exception as e:
         print(f"  [ERROR] No se pudo importar el modulo uploader del api: {e}")
         return
@@ -827,7 +865,7 @@ def iniciar_produccion_automatica(mangas_disponibles, pdf_base):
         print("Selección no válida.")
         return
 
-    uploader_path = os.path.join(parent_dir, "api", "youtube_uploader.py")
+    uploader_path = os.path.join(base_proj, "modules", "subida", "youtube_uploader.py")
 
     try:
         for manga in to_process:
@@ -858,29 +896,30 @@ def iniciar_produccion_automatica(mangas_disponibles, pdf_base):
                 print(f"\n[PIPELINE - PASO 1] Generando guion y metadatos...")
                 script_ok = run_pipeline_step(
                     f"Guion Short {manga}", 
-                    ["modules/pipeline/manga_scriptwriter.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
+                    ["modules/gemini/manga_scriptwriter.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
                 )
                 
                 if script_ok:
                     trans_ok = run_pipeline_step(
                         f"Traducción Short {manga}", 
-                        ["modules/pipeline/script_translator.py", "--manga", manga, "--chapter", "1"]
+                        ["modules/guion_metadatos/script_translator.py", "--manga", manga, "--chapter", "1"]
                     )
                     if trans_ok:
                         meta_ok = run_pipeline_step(
                             f"Metadatos Short {manga}", 
-                            ["modules/pipeline/metadata_generator.py", "--manga", manga, "--short"]
+                            ["modules/gemini/metadata_generator.py", "--manga", manga, "--short"]
                         )
                         if meta_ok:
                             # Generar reescritura y metadatos con Ollama
                             run_pipeline_step(
                                 f"Reescritura Ollama {manga}",
                                 [
-                                    "modules/pipeline/ollama_rewriter.py",
+                                    "modules/ollama/ollama_rewriter.py",
                                     "--script-path", f"outputs/{manga}/Scripts/Short_guion_ESP.txt",
                                     "--output-script", f"outputs/{manga}/Scripts/Short_guion_OLLAMA.txt",
                                     "--output-meta", f"outputs/{manga}/Scripts/short_youtube_data_OLLAMA.json",
-                                    "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json"
+                                    "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json",
+                                    "--manga", manga
                                 ]
                             )
                     else:
@@ -901,21 +940,21 @@ def iniciar_produccion_automatica(mangas_disponibles, pdf_base):
                 print(f"\n[PIPELINE - PASO 2] Generando multimedia (audio y video) para Gemini y Ollama...")
                 audio_ok = run_pipeline_step(
                     f"Audio Short Gemini {manga}",
-                    ["modules/pipeline/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short"]
+                    ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short"]
                 )
                 audio_ollama_ok = run_pipeline_step(
                     f"Audio Short Ollama {manga}",
-                    ["modules/pipeline/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
+                    ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
                 )
                 
                 if audio_ok and audio_ollama_ok:
                     video_ok = run_pipeline_step(
                         f"Video Short Gemini {manga}",
-                        ["modules/pipeline/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
+                        ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
                     )
                     video_ollama_ok = run_pipeline_step(
                         f"Video Short Ollama {manga}",
-                        ["modules/pipeline/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
+                        ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
                     )
                     
                     if video_ok and video_ollama_ok:
@@ -1129,7 +1168,7 @@ def iniciar_subida_shorts_sin_duplicar():
         parent_dir = os.path.dirname(base_proj)
         if parent_dir not in sys.path:
             sys.path.append(parent_dir)
-        from api import youtube_uploader
+        from modules.subida import youtube_uploader
     except Exception as e:
         print(f"  [ERROR] No se pudo importar el modulo uploader del api: {e}")
         return
@@ -1168,7 +1207,7 @@ def iniciar_subida_shorts_sin_duplicar():
         print("Subida cancelada.")
         return
 
-    uploader_path = os.path.join(parent_dir, "api", "youtube_uploader.py")
+    uploader_path = os.path.join(base_proj, "modules", "subida", "youtube_uploader.py")
 
     try:
         for manga in pending_mangas:
@@ -1190,7 +1229,7 @@ def iniciar_produccion_automatica_sin_duplicar(mangas_disponibles, pdf_base):
         parent_dir = os.path.dirname(base_proj)
         if parent_dir not in sys.path:
             sys.path.append(parent_dir)
-        from api import youtube_uploader
+        from modules.subida import youtube_uploader
     except Exception as e:
         print(f"  [ERROR] No se pudo importar el modulo uploader del api: {e}")
         return
@@ -1247,7 +1286,7 @@ def iniciar_produccion_automatica_sin_duplicar(mangas_disponibles, pdf_base):
         print("Selección no válida.")
         return
 
-    uploader_path = os.path.join(parent_dir, "api", "youtube_uploader.py")
+    uploader_path = os.path.join(base_proj, "modules", "subida", "youtube_uploader.py")
 
     try:
         for manga in to_process:
@@ -1276,18 +1315,18 @@ def iniciar_produccion_automatica_sin_duplicar(mangas_disponibles, pdf_base):
                 print(f"\n[PIPELINE - PASO 1] Generando guion y metadatos...")
                 script_ok = run_pipeline_step(
                     f"Guion Short {manga}", 
-                    ["modules/pipeline/manga_scriptwriter.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
+                    ["modules/gemini/manga_scriptwriter.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
                 )
                 
                 if script_ok:
                     trans_ok = run_pipeline_step(
                         f"Traducción Short {manga}", 
-                        ["modules/pipeline/script_translator.py", "--manga", manga, "--chapter", "1"]
+                        ["modules/guion_metadatos/script_translator.py", "--manga", manga, "--chapter", "1"]
                     )
                     if trans_ok:
                         run_pipeline_step(
                             f"Metadatos Short {manga}", 
-                            ["modules/pipeline/metadata_generator.py", "--manga", manga, "--short"]
+                            ["modules/gemini/metadata_generator.py", "--manga", manga, "--short"]
                         )
                     else:
                         print(f"  [ERROR] Falló la traducción para {manga}.")
@@ -1306,13 +1345,13 @@ def iniciar_produccion_automatica_sin_duplicar(mangas_disponibles, pdf_base):
                 print(f"\n[PIPELINE - PASO 2] Generando multimedia...")
                 audio_ok = run_pipeline_step(
                     f"Audio Short {manga}",
-                    ["modules/pipeline/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short"]
+                    ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short"]
                 )
                 
                 if audio_ok:
                     video_ok = run_pipeline_step(
                         f"Video Short {manga}",
-                        ["modules/pipeline/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
+                        ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
                     )
                     if video_ok:
                         db_manager.mark_short_video_created(manga, 1)
@@ -1373,7 +1412,7 @@ def iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base):
         parent_dir = os.path.dirname(base_proj)
         if parent_dir not in sys.path:
             sys.path.append(parent_dir)
-        from api import youtube_uploader
+        from modules.subida import youtube_uploader
     except Exception as e:
         print(f"  [ERROR] No se pudo importar el modulo uploader del api: {e}")
         return
@@ -1442,7 +1481,7 @@ def iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base):
         print("Selección no válida.")
         return
         
-    uploader_path = os.path.join(parent_dir, "api", "youtube_uploader.py")
+    uploader_path = os.path.join(base_proj, "modules", "subida", "youtube_uploader.py")
     
     for manga in to_process:
         print("\n" + "="*60)
@@ -1488,11 +1527,12 @@ def iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base):
             script_ok = run_pipeline_step(
                 f"Reescritura Ollama {manga}",
                 [
-                    "modules/pipeline/ollama_rewriter.py",
+                    "modules/ollama/ollama_rewriter.py",
                     "--script-path", orig_script_rel,
                     "--output-script", ollama_script_path,
                     "--output-meta", ollama_meta_path,
-                    "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json"
+                    "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json",
+                    "--manga", manga
                 ]
             )
             
@@ -1509,12 +1549,12 @@ def iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base):
             print("  [AVISO] Video de Ollama no encontrado en disco. Generando multimedia...")
             audio_ok = run_pipeline_step(
                 f"Audio Short Ollama {manga}",
-                ["modules/pipeline/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
+                ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
             )
             if audio_ok:
                 video_ok = run_pipeline_step(
                     f"Video Short Ollama {manga}",
-                    ["modules/pipeline/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
+                    ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
                 )
                 if video_ok:
                     db_manager.mark_short_video_created(manga, 2)

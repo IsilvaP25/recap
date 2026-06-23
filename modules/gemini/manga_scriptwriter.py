@@ -13,10 +13,10 @@ import re
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 try:
-    import db_manager
+    from modules import db_manager
 except ImportError:
     # Fallback para cuando se ejecuta desde la raíz del proyecto
-    from modules.pipeline import db_manager
+    from modules import db_manager
 
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 

@@ -15,7 +15,7 @@ def format_cap(num):
         return str(num)
 
 def get_chapters_in_range(manga_name, start_cap, end_cap):
-    base_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_proj = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     pdf_dir = os.path.join(base_proj, "pdf_storage", manga_name)
     chapters = set()
     
@@ -55,7 +55,7 @@ def get_chapters_in_range(manga_name, start_cap, end_cap):
     return sorted(filtered_chapters)
 
 def calculate_chapter_timestamps(manga_name, chapters):
-    base_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_proj = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     def get_video_duration(video_path):
         cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', video_path]
@@ -155,7 +155,7 @@ def consolidate_manga_content(manga_name, start_cap, end_cap, part_num=None):
     Organizes final video, thumbnail, and metadata into a clean 
     READY_TO_PUBLISH folder within the manga output directory.
     """
-    base_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_proj = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     manga_dir = os.path.join(base_proj, "outputs", manga_name)
     
     if not os.path.exists(manga_dir):

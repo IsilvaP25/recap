@@ -11,7 +11,7 @@ if PARENT_DIR not in sys.path:
     sys.path.append(PARENT_DIR)
 
 from modules import database
-from modules.pipeline import db_manager
+from modules import db_manager
 
 def get_youtube_video_mapping():
     """Construye un mapa de youtube_id -> manga_key a partir de shorts y pipeline_parts."""
@@ -121,7 +121,7 @@ def sincronizar_comentarios_canal():
         return {"status": "success", "message": "Sincronización simulada completada con éxito."}
 
     try:
-        from api import youtube_uploader
+        from modules.subida import youtube_uploader
         youtube = youtube_uploader.get_authenticated_service()
         
         if youtube == "MOCK_SERVICE":

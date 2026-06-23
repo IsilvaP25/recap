@@ -1,5 +1,5 @@
 import os
-from modules.pipeline import db_manager
+from modules import db_manager
 from modules.flows.common import run_pipeline_step, ApiKeyExhaustedException, QuotaExceededException, has_pending_pdfs
 from modules.utils import limpiar_archivos_intermedios
 from modules.api_config import obtener_capitulos_por_parte
@@ -277,7 +277,7 @@ def iniciar_flujo():
                     if not os.path.exists(pdf_path): pdf_path = os.path.join(pdf_dir, f"{format_cap(cap)}.pdf")
                     mode_sw = "full"
                     
-                    if run_pipeline_step(f"Guion Cap {format_cap(cap)}", ["modules/pipeline/manga_scriptwriter.py", "--manga", manga_name, "--chapter", format_cap(cap), "--pdf", pdf_path, "--mode", mode_sw]):
+                    if run_pipeline_step(f"Guion Cap {format_cap(cap)}", ["modules/gemini/manga_scriptwriter.py", "--manga", manga_name, "--chapter", format_cap(cap), "--pdf", pdf_path, "--mode", mode_sw]):
                         successful_caps.append(cap)
                     else:
                         print(f"⚠️ Tokens agotados o error en Cap {format_cap(cap)}. Deteniendo Fase IA.")
@@ -286,8 +286,8 @@ def iniciar_flujo():
                 if not ia_success: break # Salir del bucle de IA si falla
 
                 # Metadatos y Miniatura (También IA)
-                run_pipeline_step("Metadatos", ["modules/pipeline/metadata_generator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--part", str(current_part)])
-                if not run_pipeline_step("Miniatura IA", ["modules/pipeline/thumbnail_generator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--auto"]):
+                run_pipeline_step("Metadatos", ["modules/gemini/metadata_generator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--part", str(current_part)])
+                if not run_pipeline_step("Miniatura IA", ["modules/gemini/thumbnail_generator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--auto"]):
                     print("⚠️ Falló la miniatura. Deteniendo Fase IA.")
                     break
 
@@ -304,19 +304,19 @@ def iniciar_flujo():
                 print(f"\n>>> [FASE LOCAL] Renderizando Bloque: Caps {format_cap(start_c)} al {format_cap(end_c)}")
                 
                 for cap in successful_caps:
-                    run_pipeline_step(f"Traducción Cap {format_cap(cap)}", ["modules/pipeline/script_translator.py", "--manga", manga_name, "--chapter", format_cap(cap)])
+                    run_pipeline_step(f"Traducción Cap {format_cap(cap)}", ["modules/guion_metadatos/script_translator.py", "--manga", manga_name, "--chapter", format_cap(cap)])
                 
                 for cap in successful_caps:
                     mode_audio = "full"
-                    run_pipeline_step(f"Audio Cap {format_cap(cap)}", ["modules/pipeline/audio_generator.py", "--manga", manga_name, "--chapter", format_cap(cap), "--mode", mode_audio])
+                    run_pipeline_step(f"Audio Cap {format_cap(cap)}", ["modules/audio/audio_generator.py", "--manga", manga_name, "--chapter", format_cap(cap), "--mode", mode_audio])
                 
                 for cap in successful_caps:
                     pdf_path = os.path.join(pdf_dir, f"Capitulo_{format_cap(cap)}.pdf")
                     if not os.path.exists(pdf_path): pdf_path = os.path.join(pdf_dir, f"{format_cap(cap)}.pdf")
-                    run_pipeline_step(f"Video Cap {format_cap(cap)}", ["modules/pipeline/video_assembler.py", "--manga", manga_name, "--chapter", format_cap(cap), "--pdf", pdf_path, "--mode", "full"])
+                    run_pipeline_step(f"Video Cap {format_cap(cap)}", ["modules/video/video_assembler.py", "--manga", manga_name, "--chapter", format_cap(cap), "--pdf", pdf_path, "--mode", "full"])
 
-                run_pipeline_step("Mega Recap", ["modules/pipeline/video_assembler.py", "--manga", manga_name, "--pdf", "none", "--master", "--chapters"] + [format_cap(c) for c in successful_caps])
-                run_pipeline_step("Consolidar", ["modules/pipeline/consolidator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--part", str(current_part)])
+                run_pipeline_step("Mega Recap", ["modules/video/video_assembler.py", "--manga", manga_name, "--pdf", "none", "--master", "--chapters"] + [format_cap(c) for c in successful_caps])
+                run_pipeline_step("Consolidar", ["modules/consolidator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--part", str(current_part)])
                 
                 # LIMPIEZA
                 limpiar_archivos_intermedios(manga_name, chunk)

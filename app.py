@@ -10,7 +10,7 @@ from flask_cors import CORS
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules import database, token_monitor, pdf_converter, comments_manager
-from modules.pipeline import db_manager
+from modules import db_manager
 from modules.flows import downloader_flow, production_flow, autopilot_flow
 from modules.api_config import obtener_capitulos_por_parte
 

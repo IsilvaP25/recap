@@ -5,9 +5,9 @@ import sys
 import google.generativeai as genai
 from dotenv import load_dotenv
 try:
-    import db_manager
+    from modules import db_manager
 except ImportError:
-    from modules.pipeline import db_manager
+    from modules import db_manager
 
 load_dotenv()
 # Asegurar que se puede importar el rotador

@@ -265,7 +265,7 @@ def generate_thumbnail(manga_name, start_cap, end_cap, non_interactive=False):
         # Intentar obtener el número de parte dinámicamente de la DB
         part_num = 1
         try:
-            from modules.pipeline import db_manager
+            from modules import db_manager
             last_part, _ = db_manager.get_last_part(manga_name)
             part_num = last_part + 1
         except Exception as e:

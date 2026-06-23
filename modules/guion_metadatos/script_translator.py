@@ -8,9 +8,9 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 try:
-    import db_manager
+    from modules import db_manager
 except ImportError:
-    from modules.pipeline import db_manager
+    from modules import db_manager
 
 def is_spanish(text):
     if not text:

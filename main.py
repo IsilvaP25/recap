@@ -7,7 +7,7 @@ base_dir = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(base_dir, '.env'))
 
 from modules import database, token_monitor
-from modules.pipeline import db_manager
+from modules import db_manager
 from modules.flows import downloader_flow, pdf_flow, production_flow, autopilot_flow, shorts_flow
 
 # Añadir la carpeta raíz al path para importar el módulo 'api'

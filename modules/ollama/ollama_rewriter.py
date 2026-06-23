@@ -72,30 +72,55 @@ def rewrite_script_by_pages(script_content, model_name=OLLAMA_MODEL, base_url=OL
         
     return "\n\n".join(rewritten_sections)
 
-def generate_metadata(script_content, model_name=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, original_hashtags=""):
+def generate_metadata(script_content, model_name=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, original_hashtags="", manga_name=""):
     """
     Genera título y descripción de YouTube Shorts en formato JSON usando Ollama.
     Aplica una configuración fuertemente orientada a clickbait y añade los hashtags especificados.
     """
     url = f"{base_url}/api/generate"
     
+    manga_label = manga_name.replace("_", " ") if manga_name else ""
+    manga_rule = f"   - El título DEBE incluir obligatoriamente el nombre de la serie de manga '{manga_label}' exacto (sin cambiar su ortografía o letras).\n" if manga_label else ""
+    
+    system_instruction = (
+        "Eres un experto en marketing de YouTube Shorts y redacción publicitaria en ESPAÑOL LATINO. "
+        "Tu única tarea es generar un objeto JSON válido con las claves 'clickbait_title' y 'description'. "
+        "No agregues texto introductorio, explicaciones, ni bloques de código de markdown (como ```json). "
+        "Produce un JSON limpio y puro."
+    )
+    
     prompt = (
-        "Eres un experto en marketing viral y YouTube Shorts. Tu objetivo es generar metadatos que maximicen el porcentaje de clics (CTR) y la retención.\n"
-        "Basándote en el siguiente guión de Short, crea:\n"
-        "1. Un título de Short que sea EXTREMADAMENTE clickbait, emocionante e intrigante (menos de 50 caracteres, en español). Debe generar curiosidad masiva o un gancho insoportable.\n"
-        "   REGLAS CRÍTICAS DEL TÍTULO:\n"
-        "   - Debe preferir empezar con un signo de interrogación (ej. ¿...?).\n"
-        "   - Debe preferir incluir palabras de intriga extrema (en mayúsculas) como: MÁS DÉBIL, OP, REGRESA, VIVE, TRAICIONADO, ERROR FATAL, VENGANZA SANGRIENTA, MURIÓ 100 VECES.\n"
-        "   - Debe incluir OBLIGATORIAMENTE al menos un emoticón o emoji llamativo (ej. 😱, 🤯, 💔, 😈, 😭).\n"
-        "2. Una descripción corta y sensacionalista que enganche al usuario en los primeros segundos. NO agregues ningún hashtag por tu cuenta (se agregarán externamente).\n\n"
+        f"Basándote en el siguiente guión de un Short de YouTube, genera metadatos llamativos y clickbait en español.\n\n"
         f"GUIÓN:\n{script_content}\n\n"
-        "Devuelve la respuesta estrictamente en formato JSON válido con las siguientes claves: 'clickbait_title' y 'description'. No agregues explicaciones adicionales."
+        f"REGLAS CRÍTICAS PARA EL TÍTULO ('clickbait_title'):\n"
+        f"1. Debe ser corto (máximo 55 caracteres).\n"
+        f"2. Debe ser extremadamente intrigante y emocionante.\n"
+        f"3. Debe empezar con el signo de interrogación español '¿' y terminar con '?' (ejemplo: ¿Es el fin de todo?). NUNCA comiences con '?¿' ni dupliques los signos de interrogación.\n"
+        f"4. Debe incluir obligatoriamente al menos una de estas palabras de intriga extrema en MAYÚSCULAS: MÁS DÉBIL, OP, REGRESA, VIVE, TRAICIONADO, ERROR FATAL, VENGANZA SANGRIENTA, MURIÓ 100 VECES.\n"
+        f"{manga_rule}"
+        f"5. Debe incluir obligatoriamente al menos un emoji o emoticón llamativo (ej. 😱, 🤯, 💔, 😈, 😭) al final o dentro del título.\n"
+        f"6. Revisa la ortografía y gramática en español. Evita palabras inventadas o traducciones literales incorrectas.\n\n"
+        f"REGLAS CRÍTICAS PARA LA DESCRIPCIÓN ('description'):\n"
+        f"1. Escribe un resumen muy corto y dinámico (de 1 o 2 líneas) de la trama del Short.\n"
+        f"2. Debe ser intrigante para que el usuario quiera ver el video.\n"
+        f"3. NUNCA la dejes vacía o en blanco.\n"
+        f"4. NO agregues hashtags por tu cuenta.\n\n"
+        f"FORMATO DE SALIDA REQUERIDO:\n"
+        f"Un objeto JSON con esta estructura exacta:\n"
+        f"{{\n"
+        f"  \"clickbait_title\": \"título aquí\",\n"
+        f"  \"description\": \"resumen de la trama aquí\"\n"
+        f"}}"
     )
     
     payload = {
         "model": model_name,
         "prompt": prompt,
+        "system": system_instruction,
         "format": "json",
+        "options": {
+            "temperature": 0.3
+        },
         "stream": False
     }
     
@@ -106,14 +131,57 @@ def generate_metadata(script_content, model_name=OLLAMA_MODEL, base_url=OLLAMA_B
         
         meta = json.loads(res_json_str)
         
+        # Programmatic guardrails for clickbait title
+        title = meta.get("clickbait_title", "").strip()
+        
+        # 1. Clean double starting question marks (e.g. ?¿ or ??)
+        title = re.sub(r'^[?¿\s]*\?¿', '¿', title)
+        title = re.sub(r'^\?+', '¿', title)
+        
+        # Ensure it starts with ¿
+        if not title.startswith('¿'):
+            title = '¿' + title
+            
+        # Ensure it has a closing ?
+        if '?' not in title:
+            # Try to place it before emojis
+            has_placed = False
+            for idx, c in enumerate(title):
+                if ord(c) > 0x1000:  # Simple emoji/special character detection
+                    title = title[:idx].strip() + '?' + title[idx:]
+                    has_placed = True
+                    break
+            if not has_placed:
+                title = title + '?'
+                
+        # 2. Ensure at least one emoji exists in the title, if not append a default
+        has_emoji = False
+        for char in title:
+            codepoint = ord(char)
+            if (0x1F300 <= codepoint <= 0x1F9FF) or (0x2600 <= codepoint <= 0x27BF) or (0x1F600 <= codepoint <= 0x1F64F):
+                has_emoji = True
+                break
+        if not has_emoji:
+            title = title.strip() + " 😱"
+            
+        meta["clickbait_title"] = title
+        
         # Limpiar cualquier hashtag que el modelo haya podido poner de todos modos
         desc = meta.get("description", "").strip()
         desc_clean = re.sub(r'#\w+', '', desc).strip()
         
-        if original_hashtags:
-            meta["description"] = f"{desc_clean}\n\n{original_hashtags}"
-        else:
-            meta["description"] = desc_clean
+        # Si la descripción quedó vacía tras la limpieza o la generación, poner un fallback
+        if not desc_clean:
+            desc_clean = f"¿Listo para conocer la historia de {manga_label}? No te pierdas este emocionante resumen."
+            
+        if not original_hashtags:
+            # Generar hashtags por defecto usando el nombre del manga
+            manga_tag = f"#{manga_name.replace('_', '').replace(' ', '')}" if manga_name else ""
+            original_hashtags = f"{manga_tag} #manga #recap #shorts #anime".strip()
+            # Limpiar posibles espacios duplicados
+            original_hashtags = re.sub(r'\s+', ' ', original_hashtags)
+            
+        meta["description"] = f"{desc_clean}\n\n{original_hashtags}"
             
         return meta
     except Exception as e:
@@ -123,7 +191,7 @@ def generate_metadata(script_content, model_name=OLLAMA_MODEL, base_url=OLLAMA_B
         if original_hashtags:
             default_desc = f"{default_desc}\n\n{original_hashtags}"
         return {
-            "clickbait_title": "¡Manga Recap increíble! #Shorts",
+            "clickbait_title": f"Recap de {manga_label} #Shorts" if manga_label else "¡Manga Recap increíble! #Shorts",
             "description": default_desc
         }
 
@@ -134,6 +202,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-script", required=True, help="Ruta de destino para el guion reescrito (.txt)")
     parser.add_argument("--output-meta", required=True, help="Ruta de destino para el JSON de metadatos (.json)")
     parser.add_argument("--gemini-meta", help="Ruta al archivo JSON de metadatos original de Gemini para extraer los hashtags")
+    parser.add_argument("--manga", help="Nombre del manga para incluir en el título")
     parser.add_argument("--model", default=OLLAMA_MODEL, help="Modelo de Ollama a utilizar")
     parser.add_argument("--base-url", default=OLLAMA_BASE_URL, help="URL base del servidor de Ollama")
     
@@ -156,9 +225,9 @@ if __name__ == "__main__":
             with open(args.gemini_meta, "r", encoding="utf-8") as f:
                 gemini_data = json.load(f)
             desc_original = gemini_data.get("description", "")
-            match = re.search(r'(#.*)', desc_original, re.DOTALL)
-            if match:
-                gemini_hashtags = match.group(1).strip()
+            tags = re.findall(r'#\w+', desc_original)
+            if tags:
+                gemini_hashtags = " ".join(tags)
                 print(f"  [Info] Hashtags extraídos de Gemini: {gemini_hashtags}")
         except Exception as e:
             print(f"  [Warning] No se pudieron extraer los hashtags de Gemini: {e}")
@@ -168,7 +237,8 @@ if __name__ == "__main__":
         rewritten_script, 
         model_name=args.model, 
         base_url=args.base_url, 
-        original_hashtags=gemini_hashtags
+        original_hashtags=gemini_hashtags,
+        manga_name=args.manga
     )
     
     # Crear carpetas de destino si no existen

@@ -1,6 +1,6 @@
 import os
 import re
-from modules.pipeline import db_manager
+from modules import db_manager
 from modules.flows.common import run_pipeline_step, QuotaExceededException, has_pending_pdfs
 from modules.utils import limpiar_archivos_intermedios
 from modules.api_config import obtener_capitulos_por_parte
@@ -72,7 +72,7 @@ def iniciar_flujo():
     
         # El uploader está en la raíz (end to end/api/...)
         root_workspace = os.path.dirname(base_proj)
-        uploader_path = os.path.join(root_workspace, "api", "youtube_uploader.py")
+        uploader_path = os.path.join(root_workspace, "modules", "subida", "youtube_uploader.py")
     
         for manga_name in mangas_a_procesar:
             print(f"\n>>> TRABAJANDO EN: {manga_name.replace('_', ' ')}")
@@ -97,17 +97,17 @@ def iniciar_flujo():
                         print(f"  [ALERTA] Faltan archivos para la Parte {p_num}. Reconstruyendo...")
                         success_rebuild = True
                         if not os.path.exists(json_p):
-                            if not run_pipeline_step("Metadatos", ["modules/pipeline/metadata_generator.py", "--manga", manga_name, "--start", str(start_c), "--end", str(end_c), "--part", str(p_num)]):
+                            if not run_pipeline_step("Metadatos", ["modules/gemini/metadata_generator.py", "--manga", manga_name, "--start", str(start_c), "--end", str(end_c), "--part", str(p_num)]):
                                 success_rebuild = False
                         if not os.path.exists(thumb_p):
-                            if not run_pipeline_step("Miniatura", ["modules/pipeline/thumbnail_generator.py", "--manga", manga_name, "--start", str(start_c), "--end", str(end_c), "--auto"]):
+                            if not run_pipeline_step("Miniatura", ["modules/gemini/thumbnail_generator.py", "--manga", manga_name, "--start", str(start_c), "--end", str(end_c), "--auto"]):
                                 success_rebuild = False
                                 
                         if not success_rebuild:
                             print(f"  [ERROR] Falló la reconstrucción de activos para la Parte {p_num}. Saltando subida...")
                             break
                             
-                        if not run_pipeline_step("Consolidar", ["modules/pipeline/consolidator.py", "--manga", manga_name, "--start", str(start_c), "--end", str(end_c), "--part", str(p_num)]):
+                        if not run_pipeline_step("Consolidar", ["modules/consolidator.py", "--manga", manga_name, "--start", str(start_c), "--end", str(end_c), "--part", str(p_num)]):
                             print(f"  [ERROR] Falló la consolidación para la Parte {p_num}. Saltando subida...")
                             break
     
@@ -186,10 +186,10 @@ def iniciar_flujo():
                     if not os.path.exists(pdf_path): pdf_path = os.path.join(pdf_dir, f"{format_cap(cap)}.pdf")
                     mode_sw = "full"
                     
-                    if not run_pipeline_step(f"Guion {format_cap(cap)}", ["modules/pipeline/manga_scriptwriter.py", "--manga", manga_name, "--chapter", format_cap(cap), "--pdf", pdf_path, "--mode", mode_sw]):
+                    if not run_pipeline_step(f"Guion {format_cap(cap)}", ["modules/gemini/manga_scriptwriter.py", "--manga", manga_name, "--chapter", format_cap(cap), "--pdf", pdf_path, "--mode", mode_sw]):
                         success_ia = False
                         break
-                    if not run_pipeline_step(f"Traducción {format_cap(cap)}", ["modules/pipeline/script_translator.py", "--manga", manga_name, "--chapter", format_cap(cap)]):
+                    if not run_pipeline_step(f"Traducción {format_cap(cap)}", ["modules/guion_metadatos/script_translator.py", "--manga", manga_name, "--chapter", format_cap(cap)]):
                         success_ia = False
                         break
                 
@@ -197,7 +197,7 @@ def iniciar_flujo():
                     print(f"  [ERROR] Falló la fase de Inteligencia Artificial para {manga_name}. Abortando este bloque.")
                     break
                     
-                if not run_pipeline_step("Metadatos", ["modules/pipeline/metadata_generator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--part", str(last_part + 1)]):
+                if not run_pipeline_step("Metadatos", ["modules/gemini/metadata_generator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--part", str(last_part + 1)]):
                     print(f"  [ERROR] Falló el paso de Metadatos para {manga_name}. Abortando este bloque.")
                     break
     
@@ -209,10 +209,10 @@ def iniciar_flujo():
                     if not os.path.exists(pdf_path): pdf_path = os.path.join(pdf_dir, f"{format_cap(cap)}.pdf")
                     mode_sw = "full"
     
-                    if not run_pipeline_step(f"Audio {format_cap(cap)}", ["modules/pipeline/audio_generator.py", "--manga", manga_name, "--chapter", format_cap(cap), "--mode", mode_sw]):
+                    if not run_pipeline_step(f"Audio {format_cap(cap)}", ["modules/audio/audio_generator.py", "--manga", manga_name, "--chapter", format_cap(cap), "--mode", mode_sw]):
                         success_prod = False
                         break
-                    if not run_pipeline_step(f"Video {format_cap(cap)}", ["modules/pipeline/video_assembler.py", "--manga", manga_name, "--chapter", format_cap(cap), "--pdf", pdf_path, "--mode", "full"]):
+                    if not run_pipeline_step(f"Video {format_cap(cap)}", ["modules/video/video_assembler.py", "--manga", manga_name, "--chapter", format_cap(cap), "--pdf", pdf_path, "--mode", "full"]):
                         success_prod = False
                         break
                 
@@ -220,13 +220,13 @@ def iniciar_flujo():
                     print(f"  [ERROR] Falló la fase de Producción Técnica para {manga_name}. Abortando este bloque.")
                     break
     
-                if not run_pipeline_step("Mega Recap", ["modules/pipeline/video_assembler.py", "--manga", manga_name, "--pdf", "none", "--master", "--chapters"] + [format_cap(c) for c in chunk]):
+                if not run_pipeline_step("Mega Recap", ["modules/video/video_assembler.py", "--manga", manga_name, "--pdf", "none", "--master", "--chapters"] + [format_cap(c) for c in chunk]):
                     print(f"  [ERROR] Falló la creación del Mega Recap para {manga_name}. Abortando este bloque.")
                     break
-                if not run_pipeline_step("Miniatura", ["modules/pipeline/thumbnail_generator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--auto"]):
+                if not run_pipeline_step("Miniatura", ["modules/gemini/thumbnail_generator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--auto"]):
                     print(f"  [ERROR] Falló la generación de la Miniatura para {manga_name}. Abortando este bloque.")
                     break
-                if not run_pipeline_step("Consolidar", ["modules/pipeline/consolidator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--part", str(last_part + 1)]):
+                if not run_pipeline_step("Consolidar", ["modules/consolidator.py", "--manga", manga_name, "--start", format_cap(start_c), "--end", format_cap(end_c), "--part", str(last_part + 1)]):
                     print(f"  [ERROR] Falló la consolidación para {manga_name}. Abortando este bloque.")
                     break
                 limpiar_archivos_intermedios(manga_name, chunk)
