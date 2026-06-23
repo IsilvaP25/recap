@@ -80,7 +80,6 @@ def generate_metadata(script_content, model_name=OLLAMA_MODEL, base_url=OLLAMA_B
     url = f"{base_url}/api/generate"
     
     manga_label = manga_name.replace("_", " ") if manga_name else ""
-    manga_rule = f"   - El título DEBE incluir obligatoriamente el nombre de la serie de manga '{manga_label}' exacto (sin cambiar su ortografía o letras).\n" if manga_label else ""
     
     system_instruction = (
         "Eres un experto en marketing de YouTube Shorts y redacción publicitaria en ESPAÑOL LATINO. "
@@ -94,10 +93,9 @@ def generate_metadata(script_content, model_name=OLLAMA_MODEL, base_url=OLLAMA_B
         f"GUIÓN:\n{script_content}\n\n"
         f"REGLAS CRÍTICAS PARA EL TÍTULO ('clickbait_title'):\n"
         f"1. Debe ser corto (máximo 55 caracteres).\n"
-        f"2. Debe ser extremadamente intrigante y emocionante.\n"
+        f"2. Debe ser extremadamente intrigante y emocionante y NO debe incluir el nombre del manga en el título.\n"
         f"3. Debe empezar con el signo de interrogación español '¿' y terminar con '?' (ejemplo: ¿Es el fin de todo?). NUNCA comiences con '?¿' ni dupliques los signos de interrogación.\n"
         f"4. Debe incluir obligatoriamente al menos una de estas palabras de intriga extrema en MAYÚSCULAS: MÁS DÉBIL, OP, REGRESA, VIVE, TRAICIONADO, ERROR FATAL, VENGANZA SANGRIENTA, MURIÓ 100 VECES.\n"
-        f"{manga_rule}"
         f"5. Debe incluir obligatoriamente al menos un emoji o emoticón llamativo (ej. 😱, 🤯, 💔, 😈, 😭) al final o dentro del título.\n"
         f"6. Revisa la ortografía y gramática en español. Evita palabras inventadas o traducciones literales incorrectas.\n\n"
         f"REGLAS CRÍTICAS PARA LA DESCRIPCIÓN ('description'):\n"
