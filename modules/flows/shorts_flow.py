@@ -279,59 +279,47 @@ def iniciar_generacion_videos(mangas_disponibles, pdf_base):
         else:
             print(f"  [ERROR] Falló la generación de alguno de los audios para {manga}.")
 
-def calcular_fecha_10am(last_scheduled_str=None):
+def obtener_siguiente_slot_gemini(last_scheduled_str=None):
     import datetime
-    target_hour = 10
-    target_minute = 0
-    
-    # Obtener zona horaria local
     tz = datetime.datetime.now().astimezone().tzinfo
     now = datetime.datetime.now(tz)
     
-    next_date = None
     if last_scheduled_str:
         try:
-            # Parsear la fecha guardada
-            last_date = datetime.datetime.fromisoformat(last_scheduled_str)
-            # Sumar un dia y forzar las 10:00 AM
-            next_date = (last_date + datetime.timedelta(days=1)).replace(
-                hour=target_hour, minute=target_minute, second=0, microsecond=0
-            )
-        except Exception as e:
-            print(f"  [YouTube] Error parseando fecha previa '{last_scheduled_str}': {e}. Se reseteara el calendario.")
-            next_date = None
+            dt = datetime.datetime.fromisoformat(last_scheduled_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=tz)
+        except Exception:
+            dt = now
+    else:
+        dt = now
+        
+    hour = dt.hour
+    if hour < 10:
+        next_dt = dt.replace(hour=10, minute=0, second=0, microsecond=0)
+    elif hour < 15:
+        next_dt = dt.replace(hour=15, minute=0, second=0, microsecond=0)
+    elif hour < 20:
+        next_dt = dt.replace(hour=20, minute=0, second=0, microsecond=0)
+    else:
+        next_dt = (dt + datetime.timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+        
+    while next_dt <= now + datetime.timedelta(minutes=5):
+        h = next_dt.hour
+        if h == 10:
+            next_dt = next_dt.replace(hour=15, minute=0)
+        elif h == 15:
+            next_dt = next_dt.replace(hour=20, minute=0)
+        else:
+            next_dt = (next_dt + datetime.timedelta(days=1)).replace(hour=10, minute=0)
             
-    if not next_date:
-        # Programar hoy a las 10:00 AM en la zona horaria local
-        next_date = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
-        
-    # Validar si la fecha calculada esta en el pasado (con margen de 5 minutos)
-    if next_date <= now + datetime.timedelta(minutes=5):
-        # Si hoy ya paso, programar para mañana a las 10:00 AM
-        next_date = (now + datetime.timedelta(days=1)).replace(
-            hour=target_hour, minute=target_minute, second=0, microsecond=0
-        )
-        
-    return next_date.isoformat()
+    return next_dt.isoformat()
 
-def calcular_fecha_3pm(fecha_10am_str):
+def obtener_slot_ollama(fecha_gemini_str):
     import datetime
-    # Simplemente parsear la fecha de las 10:00 AM y cambiar la hora a las 15:00 (3 PM)
-    dt = datetime.datetime.fromisoformat(fecha_10am_str)
-    dt_3pm = dt.replace(hour=15, minute=0, second=0, microsecond=0)
-    return dt_3pm.isoformat()
-
-def calcular_fecha_10_30am(fecha_10am_str):
-    import datetime
-    dt = datetime.datetime.fromisoformat(fecha_10am_str)
-    dt_10_30 = dt.replace(hour=10, minute=30, second=0, microsecond=0)
-    return dt_10_30.isoformat()
-
-def calcular_fecha_3_30pm(fecha_3pm_str):
-    import datetime
-    dt = datetime.datetime.fromisoformat(fecha_3pm_str)
-    dt_3_30 = dt.replace(hour=15, minute=30, second=0, microsecond=0)
-    return dt_3_30.isoformat()
+    dt = datetime.datetime.fromisoformat(fecha_gemini_str)
+    dt_ollama = dt + datetime.timedelta(minutes=30)
+    return dt_ollama.isoformat()
 
 def run_upload_subprocess(command, env):
     import subprocess
@@ -449,11 +437,11 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
     is_uploaded = row[0] if row and row[0] is not None else 0
     stored_scheduled_date = row[1] if row else None
     
-    if is_uploaded >= 4:
-        print(f"  [OK] Ambos Shorts para {manga} ya han sido subidos a YouTube (ambas franjas horarias).")
+    if is_uploaded >= 2:
+        print(f"  [OK] Ambos Shorts para {manga} ya han sido subidos a YouTube (Gemini y Ollama).")
         return True
 
-    # --- PASO 1: GEMINI - SUBIDA 1 (10:00 AM) ---
+    # --- PASO 1: GEMINI (10:00 AM / 3:00 PM / 8:00 PM) ---
     if is_uploaded == 0:
         if not os.path.exists(video_path_gemini):
             print(f"  [ERROR] El video de Gemini no existe: {video_path_gemini}")
@@ -463,9 +451,9 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
             return False
 
         last_date_str = db_manager.get_last_scheduled_short_date()
-        scheduled_date_iso = calcular_fecha_10am(last_date_str)
+        scheduled_date_iso = obtener_siguiente_slot_gemini(last_date_str)
         
-        print(f"\n[Paso 1/4] Programando Short Gemini a las 10:00 AM para: {scheduled_date_iso}")
+        print(f"\n[Paso 1/2] Programando Short Gemini en slot para: {scheduled_date_iso}")
         try:
             command = [
                 sys.executable, uploader_path, 
@@ -491,10 +479,10 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
                         youtube_id = match_url.group(1)
                         
             if not youtube_id:
-                print("  [ERROR] No se pudo determinar el ID de YouTube de la subida Gemini 1.")
+                print("  [ERROR] No se pudo determinar el ID de YouTube de la subida Gemini.")
                 return False
                 
-            print(f"  [OK] Subida Gemini 1 exitosa. ID: {youtube_id}")
+            print(f"  [OK] Subida Gemini exitosa. ID: {youtube_id}")
             db_manager.mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date_iso, 1)
             
             if mock_youtube:
@@ -503,7 +491,7 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
                 processed = wait_for_processing(yt_client, youtube_id)
                 
             if not processed:
-                print("  [WARNING] [YouTube] El video Gemini 1 no se procesó. Deteniendo flujo.")
+                print("  [WARNING] [YouTube] El video Gemini no se procesó. Deteniendo flujo.")
                 return False
                 
             is_uploaded = 1
@@ -512,10 +500,10 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
         except QuotaExceededException:
             raise
         except Exception as e:
-            print(f"  [ERROR] Error durante subida Gemini 1: {e}")
+            print(f"  [ERROR] Error durante subida Gemini: {e}")
             return False
 
-    # --- PASO 2: OLLAMA - SUBIDA 1 (10:30 AM) ---
+    # --- PASO 2: OLLAMA (30 mins después de Gemini) ---
     if is_uploaded == 1:
         if not os.path.exists(video_path_ollama):
             print(f"  [ERROR] El video de Ollama no existe: {video_path_ollama}")
@@ -524,9 +512,9 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
             print(f"  [ERROR] Los metadatos de Ollama no existen: {metadata_path_ollama}")
             return False
 
-        scheduled_date_iso = calcular_fecha_10_30am(stored_scheduled_date)
+        scheduled_date_iso = obtener_slot_ollama(stored_scheduled_date)
         
-        print(f"\n[Paso 2/4] Programando Short Ollama a las 10:30 AM para: {scheduled_date_iso}")
+        print(f"\n[Paso 2/2] Programando Short Ollama para: {scheduled_date_iso}")
         try:
             command = [
                 sys.executable, uploader_path, 
@@ -552,10 +540,10 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
                         youtube_id = match_url.group(1)
                         
             if not youtube_id:
-                print("  [ERROR] No se pudo determinar el ID de YouTube de la subida Ollama 1.")
+                print("  [ERROR] No se pudo determinar el ID de YouTube de la subida Ollama.")
                 return False
                 
-            print(f"  [OK] Subida Ollama 1 exitosa. ID: {youtube_id}")
+            print(f"  [OK] Subida Ollama exitosa. ID: {youtube_id}")
             db_manager.mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date_iso, 2)
             
             if mock_youtube:
@@ -564,133 +552,17 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
                 processed = wait_for_processing(yt_client, youtube_id)
                 
             if not processed:
-                print("  [WARNING] [YouTube] El video Ollama 1 no se procesó. Deteniendo flujo.")
+                print("  [WARNING] [YouTube] El video Ollama no se procesó. Deteniendo flujo.")
                 return False
                 
-            is_uploaded = 2
+            delete_local_video(video_path_gemini)
+            delete_local_video(video_path_ollama)
+            return True
             
         except QuotaExceededException:
             raise
         except Exception as e:
-            print(f"  [ERROR] Error durante subida Ollama 1: {e}")
-            return False
-
-    # --- PASO 3: GEMINI - SUBIDA 2 (3:00 PM) ---
-    if is_uploaded == 2:
-        if not os.path.exists(video_path_gemini):
-            print(f"  [ERROR] El video de Gemini no existe para la segunda subida.")
-            return False
-
-        scheduled_date_iso = calcular_fecha_3pm(stored_scheduled_date)
-        
-        print(f"\n[Paso 3/4] Programando Short Gemini a las 3:00 PM para: {scheduled_date_iso}")
-        try:
-            command = [
-                sys.executable, uploader_path, 
-                "--video", video_path_gemini, 
-                "--manga", manga, 
-                "--schedule", scheduled_date_iso,
-                "--json", metadata_path_gemini
-            ]
-            env = os.environ.copy()
-            env["PYTHONPATH"] = base_proj + os.pathsep + env.get("PYTHONPATH", "")
-            output_str = run_upload_subprocess(command, env)
-            
-            youtube_id = None
-            if mock_youtube:
-                youtube_id = f"mock_yt_g2_{int(time.time())}"
-            else:
-                match = re.search(r'Video subido con ID:\s*([a-zA-Z0-9_-]+)', output_str)
-                if match:
-                    youtube_id = match.group(1)
-                else:
-                    match_url = re.search(r'https://youtu\.be/([a-zA-Z0-9_-]+)', output_str)
-                    if match_url:
-                        youtube_id = match_url.group(1)
-                        
-            if not youtube_id:
-                print("  [ERROR] No se pudo determinar el ID de YouTube de la subida Gemini 2.")
-                return False
-                
-            print(f"  [OK] Subida Gemini 2 exitosa. ID: {youtube_id}")
-            db_manager.mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date_iso, 3)
-            
-            if mock_youtube:
-                processed = wait_for_processing(None, youtube_id)
-            else:
-                processed = wait_for_processing(yt_client, youtube_id)
-                
-            if processed:
-                delete_local_video(video_path_gemini)
-                is_uploaded = 3
-                # Mantener la fecha base para calcular las 3:30 PM de Ollama a partir de esta
-                stored_scheduled_date = scheduled_date_iso
-            else:
-                print("  [WARNING] [YouTube] El video Gemini 2 no se procesó. No se eliminará localmente.")
-                return False
-                
-        except QuotaExceededException:
-            raise
-        except Exception as e:
-            print(f"  [ERROR] Error durante subida Gemini 2: {e}")
-            return False
-
-    # --- PASO 4: OLLAMA - SUBIDA 2 (3:30 PM) ---
-    if is_uploaded == 3:
-        if not os.path.exists(video_path_ollama):
-            print(f"  [ERROR] El video de Ollama no existe para la segunda subida.")
-            return False
-
-        scheduled_date_iso = calcular_fecha_3_30pm(stored_scheduled_date)
-        
-        print(f"\n[Paso 4/4] Programando Short Ollama a las 3:30 PM para: {scheduled_date_iso}")
-        try:
-            command = [
-                sys.executable, uploader_path, 
-                "--video", video_path_ollama, 
-                "--manga", manga, 
-                "--schedule", scheduled_date_iso,
-                "--json", metadata_path_ollama
-            ]
-            env = os.environ.copy()
-            env["PYTHONPATH"] = base_proj + os.pathsep + env.get("PYTHONPATH", "")
-            output_str = run_upload_subprocess(command, env)
-            
-            youtube_id = None
-            if mock_youtube:
-                youtube_id = f"mock_yt_o2_{int(time.time())}"
-            else:
-                match = re.search(r'Video subido con ID:\s*([a-zA-Z0-9_-]+)', output_str)
-                if match:
-                    youtube_id = match.group(1)
-                else:
-                    match_url = re.search(r'https://youtu\.be/([a-zA-Z0-9_-]+)', output_str)
-                    if match_url:
-                        youtube_id = match_url.group(1)
-                        
-            if not youtube_id:
-                print("  [ERROR] No se pudo determinar el ID de YouTube de la subida Ollama 2.")
-                return False
-                
-            print(f"  [OK] Subida Ollama 2 exitosa. ID: {youtube_id}")
-            db_manager.mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date_iso, 4)
-            
-            if mock_youtube:
-                processed = wait_for_processing(None, youtube_id)
-            else:
-                processed = wait_for_processing(yt_client, youtube_id)
-                
-            if processed:
-                delete_local_video(video_path_ollama)
-                return True
-            else:
-                print("  [WARNING] [YouTube] El video Ollama 2 no se procesó. No se eliminará localmente.")
-                return False
-                
-        except QuotaExceededException:
-            raise
-        except Exception as e:
-            print(f"  [ERROR] Error durante subida Ollama 2: {e}")
+            print(f"  [ERROR] Error durante subida Ollama: {e}")
             return False
     return False
 
@@ -699,12 +571,12 @@ def iniciar_subida_shorts_unificada(mangas_disponibles, pdf_base):
     print("   --- SUBIR SHORTS A YOUTUBE (OLLAMA INTEGRADO) ---")
     print("="*50)
     
-    # Identificar mangas con Gemini subido (is_uploaded == 2 o is_uploaded == 3) pero Ollama pendiente
+    # Identificar mangas con Gemini subido (is_uploaded == 1) pero Ollama pendiente
     import sqlite3
     mangas_pendientes = []
     conn = sqlite3.connect(db_manager.DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT manga, is_uploaded FROM shorts WHERE is_uploaded IN (2, 3)')
+    cursor.execute('SELECT manga, is_uploaded FROM shorts WHERE is_uploaded == 1')
     rows = cursor.fetchall()
     conn.close()
     
@@ -1436,12 +1308,12 @@ def iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base):
         print(f"  [ERROR] Autenticacion fallida: {e}")
         return
 
-    # 2. Identificar mangas con Gemini subido (is_uploaded == 2 o is_uploaded == 3) pero Ollama pendiente
+    # 2. Identificar mangas con Gemini subido (is_uploaded == 1) pero Ollama pendiente
     import sqlite3
     mangas_pendientes = []
     conn = sqlite3.connect(db_manager.DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT manga, is_uploaded FROM shorts WHERE is_uploaded IN (2, 3)')
+    cursor.execute('SELECT manga, is_uploaded FROM shorts WHERE is_uploaded == 1')
     rows = cursor.fetchall()
     conn.close()
     
@@ -1455,7 +1327,7 @@ def iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base):
                 break
                 
     if not mangas_pendientes:
-        print("No hay ningún manga con Gemini subido que tenga pendiente la subida de Ollama (is_uploaded = 2 o 3).")
+        print("No hay ningún manga con Gemini subido que tenga pendiente la subida de Ollama (is_uploaded = 1).")
         return
         
     print(f"Se encontraron {len(mangas_pendientes)} mangas con Ollama pendiente:")
@@ -1580,7 +1452,6 @@ def procesar_subida_ollama_pendiente(manga, base_proj, uploader_path, mock_youtu
     import re
     import sys
     import sqlite3
-    import datetime
     
     print("\n" + "-"*50)
     print(f"Procesando subida de Ollama pendiente para: {manga.replace('_', ' ')}")
@@ -1606,104 +1477,25 @@ def procesar_subida_ollama_pendiente(manga, base_proj, uploader_path, mock_youtu
     is_uploaded = row[0] if row and row[0] is not None else 0
     stored_scheduled_date = row[1] if row else None
     
-    if is_uploaded >= 4:
+    if is_uploaded >= 2:
         print(f"  [OK] El short de Ollama para {manga} ya está completamente subido.")
         return True
 
-    # Fechas de inicio
-    def calcular_fecha_pendiente_10_30am(last_scheduled_str=None):
-        tz = datetime.datetime.now().astimezone().tzinfo
-        baseline = datetime.datetime(2026, 6, 22, 10, 30, 0, tzinfo=tz)
-        
-        if last_scheduled_str:
-            try:
-                last_date = datetime.datetime.fromisoformat(last_scheduled_str)
-                if last_date >= baseline:
-                    next_date = (last_date + datetime.timedelta(days=1)).replace(
-                        hour=10, minute=30, second=0, microsecond=0
-                    )
-                    return next_date.isoformat()
-            except Exception:
-                pass
-        return baseline.isoformat()
-
-    def calcular_fecha_pendiente_3_30pm(fecha_10_30am_str):
-        dt = datetime.datetime.fromisoformat(fecha_10_30am_str)
-        dt_3_30 = dt.replace(hour=15, minute=30, second=0, microsecond=0)
-        return dt_3_30.isoformat()
-
-    # --- PASO 1: OLLAMA 1 (10:30 AM) ---
-    if is_uploaded == 2:
-        conn = sqlite3.connect(db_manager.DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute('SELECT MAX(scheduled_date) FROM shorts WHERE is_uploaded >= 3 AND scheduled_date IS NOT NULL')
-        row_max = cursor.fetchone()
-        conn.close()
-        
-        last_date_str = row_max[0] if row_max else None
-        scheduled_date_iso_1 = calcular_fecha_pendiente_10_30am(last_date_str)
-        
-        print(f"\n[Ollama Pendiente - 1/2] Programando a las 10:30 AM para: {scheduled_date_iso_1}")
-        try:
-            command = [
-                sys.executable, uploader_path, 
-                "--video", video_path_ollama, 
-                "--manga", manga, 
-                "--schedule", scheduled_date_iso_1,
-                "--json", metadata_path_ollama
-            ]
-            env = os.environ.copy()
-            env["PYTHONPATH"] = base_proj + os.pathsep + env.get("PYTHONPATH", "")
-            output_str = run_upload_subprocess(command, env)
-            
-            youtube_id = None
-            if mock_youtube:
-                youtube_id = f"mock_yt_pend1_{int(time.time())}"
-            else:
-                match = re.search(r'Video subido con ID:\s*([a-zA-Z0-9_-]+)', output_str)
-                if match:
-                    youtube_id = match.group(1)
-                else:
-                    match_url = re.search(r'https://youtu\.be/([a-zA-Z0-9_-]+)', output_str)
-                    if match_url:
-                        youtube_id = match_url.group(1)
-                        
-            if not youtube_id:
-                print("  [ERROR] No se pudo determinar el ID de YouTube de la primera subida de Ollama.")
-                return False
-                
-            print(f"  [OK] Primera subida de Ollama exitosa. ID: {youtube_id}")
-            db_manager.mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date_iso_1, 3)
-            
-            if mock_youtube:
-                processed = wait_for_processing(None, youtube_id)
-            else:
-                processed = wait_for_processing(yt_client, youtube_id)
-                
-            if not processed:
-                print("  [WARNING] [YouTube] El video 1 de Ollama no se marcó como procesado. Deteniendo.")
-                return False
-                
-            is_uploaded = 3
-            stored_scheduled_date = scheduled_date_iso_1
-            
-        except QuotaExceededException:
-            raise
-        except Exception as e:
-            print(f"  [ERROR] Error en primera subida de Ollama: {e}")
+    # --- PASO ÚNICO PENDIENTE: OLLAMA (30 mins después de Gemini) ---
+    if is_uploaded == 1:
+        if not stored_scheduled_date:
+            print("  [ERROR] No hay fecha de Gemini guardada para calcular el slot de Ollama.")
             return False
-
-    # --- PASO 2: OLLAMA 2 (3:30 PM) ---
-    if is_uploaded == 3:
-        scheduled_date_iso_2 = calcular_fecha_pendiente_3_30pm(stored_scheduled_date)
+            
+        scheduled_date_iso = obtener_slot_ollama(stored_scheduled_date)
         
-        print(f"\n[Ollama Pendiente - 2/2] Programando a las 3:30 PM para: {scheduled_date_iso_2}")
+        print(f"\n[Ollama Pendiente] Programando a las 30 mins después de Gemini para: {scheduled_date_iso}")
         try:
             command = [
                 sys.executable, uploader_path, 
                 "--video", video_path_ollama, 
                 "--manga", manga, 
-                "--schedule", scheduled_date_iso_2,
+                "--schedule", scheduled_date_iso,
                 "--json", metadata_path_ollama
             ]
             env = os.environ.copy()
@@ -1712,7 +1504,7 @@ def procesar_subida_ollama_pendiente(manga, base_proj, uploader_path, mock_youtu
             
             youtube_id = None
             if mock_youtube:
-                youtube_id = f"mock_yt_pend2_{int(time.time())}"
+                youtube_id = f"mock_yt_pend_{int(time.time())}"
             else:
                 match = re.search(r'Video subido con ID:\s*([a-zA-Z0-9_-]+)', output_str)
                 if match:
@@ -1723,11 +1515,11 @@ def procesar_subida_ollama_pendiente(manga, base_proj, uploader_path, mock_youtu
                         youtube_id = match_url.group(1)
                         
             if not youtube_id:
-                print("  [ERROR] No se pudo determinar el ID de YouTube de la segunda subida de Ollama.")
+                print("  [ERROR] No se pudo determinar el ID de YouTube de la subida de Ollama pendiente.")
                 return False
                 
-            print(f"  [OK] Segunda subida de Ollama exitosa. ID: {youtube_id}")
-            db_manager.mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date_iso_2, 4)
+            print(f"  [OK] Subida de Ollama pendiente exitosa. ID: {youtube_id}")
+            db_manager.mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date_iso, 2)
             
             if mock_youtube:
                 processed = wait_for_processing(None, youtube_id)
@@ -1735,16 +1527,18 @@ def procesar_subida_ollama_pendiente(manga, base_proj, uploader_path, mock_youtu
                 processed = wait_for_processing(yt_client, youtube_id)
                 
             if processed:
+                video_path_gemini = os.path.join(base_proj, "outputs", manga, "VIDEOS", "Short_1.mp4")
+                delete_local_video(video_path_gemini)
                 delete_local_video(video_path_ollama)
                 return True
             else:
-                print("  [WARNING] [YouTube] El video 2 de Ollama no se procesó. No se eliminará localmente.")
+                print("  [WARNING] [YouTube] El video de Ollama pendiente no se marcó como procesado. No se eliminarán locales.")
                 return False
                 
         except QuotaExceededException:
             raise
         except Exception as e:
-            print(f"  [ERROR] Error en segunda subida de Ollama: {e}")
+            print(f"  [ERROR] Error en subida de Ollama pendiente: {e}")
             return False
             
     return False

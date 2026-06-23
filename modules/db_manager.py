@@ -436,7 +436,7 @@ def get_pending_shorts_uploads():
     cursor.execute('''
         SELECT manga 
         FROM shorts 
-        WHERE video_created = 1 AND is_uploaded < 2
+        WHERE video_created >= 2 AND is_uploaded < 2
     ''')
     rows = cursor.fetchall()
     conn.close()
