@@ -1716,8 +1716,7 @@ def iniciar_reprogramacion_y_relleno_shorts(mangas_disponibles, pdf_base):
     fechas_ocupadas = obtener_fechas_ocupadas()
     
     # 4. Generar slots secuenciales desde "now" y buscar slots de las 8:00 PM vacíos
-    last_scheduled_str = db_manager.get_last_scheduled_short_date()
-    next_dt_str = obtener_siguiente_slot_gemini(last_scheduled_str)
+    next_dt_str = obtener_siguiente_slot_gemini(None)
     dt = datetime.datetime.fromisoformat(next_dt_str)
     
     backlog_idx = 0
