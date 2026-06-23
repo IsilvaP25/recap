@@ -112,7 +112,7 @@ def upload_video(youtube, file_path, title, description, category="22", tags=Non
         
     body = {
         'snippet': {
-            'title': title,
+            'title': title[:100],
             'description': description,
             'tags': tags or [],
             'categoryId': category
@@ -284,7 +284,7 @@ if __name__ == "__main__":
         # Insertar body con publishAt si existe
         body = {
             'snippet': {
-                'title': meta.get('clickbait_title', f"{args.manga} Recap"),
+                'title': meta.get('clickbait_title', f"{args.manga} Recap")[:100],
                 'description': meta.get('description', f"Recap of {args.manga}"),
                 'tags': meta.get('tags', []),
                 'categoryId': "22"
