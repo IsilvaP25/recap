@@ -56,6 +56,14 @@ def analizar_lote(lote_imagenes, tipo_manga):
             error_str = str(e)
             if provider == "gemini" and ("429" in error_str or "RESOURCE_EXHAUSTED" in error_str):
                 print(f"[!] Cuota agotada en {modelo}. Escaneando otras llaves...")
+                try:
+                    from modules import api_rotator
+                    keys_list = api_config.obtener_api_keys_disponibles()
+                    curr_idx = api_config.get_current_key_index()
+                    if curr_idx < len(keys_list):
+                        api_rotator.report_failed_key(keys_list[curr_idx])
+                except Exception:
+                    pass
                 if token_monitor.validar_acceso_gemini():
                     intentos += 1
                     import time
@@ -168,6 +176,14 @@ def generar_guion_capitulo(chapter_id, info_progreso=""):
             error_str = str(e)
             if provider == "gemini" and ("429" in error_str or "RESOURCE_EXHAUSTED" in error_str):
                 print(f"[!] Cuota agotada en {modelo} durante el resumen final. Buscando proxima key...")
+                try:
+                    from modules import api_rotator
+                    keys_list = api_config.obtener_api_keys_disponibles()
+                    curr_idx = api_config.get_current_key_index()
+                    if curr_idx < len(keys_list):
+                        api_rotator.report_failed_key(keys_list[curr_idx])
+                except Exception:
+                    pass
                 if token_monitor.validar_acceso_gemini():
                     intentos += 1
                     import time

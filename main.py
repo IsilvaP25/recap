@@ -32,6 +32,15 @@ def main():
     database.inicializar_db()
     db_manager.init_db()
     
+    # Limpiar el pool de API keys agotadas al iniciar una nueva sesión
+    session_file = os.path.join(base_dir, "temp", "exhausted_keys.json")
+    if os.path.exists(session_file):
+        try:
+            os.remove(session_file)
+            print("  [SISTEMA] Sesión iniciada: Limpiando pool de API keys de Gemini.")
+        except Exception as e:
+            pass
+            
     print("\n" + "="*50)
     print("      --- CONFIGURACIÓN DE SESIÓN ---")
     print("="*50)
@@ -88,7 +97,6 @@ def main():
             print("  El sistema se apagará en 30 segundos por solicitud previa.")
             print("  Para CANCELAR el apagado, abre CMD o PowerShell y escribe: shutdown /a")
             print("!"*60)
-            import os
             os.system('shutdown /s /t 30')
             break
 

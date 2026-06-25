@@ -20,6 +20,15 @@ except ImportError:
 # Configuración dinámica
 genai.configure(api_key=api_rotator.get_any_key())
 
+def print_progress(completed, total, prefix=''):
+    longitud = 10
+    porcentaje = f"{100 * (completed / float(total)):.1f}%"
+    llenado = int(longitud * completed // total)
+    barra = '#' * llenado + '-' * (longitud - llenado)
+    linea = f"\r\x1b[K  [{prefix}] |{barra}| {porcentaje}"
+    sys.stdout.write(linea)
+    sys.stdout.flush()
+
 def clean_manga_title(folder_name):
     # Remove underscores and normalize spaces
     return " ".join(folder_name.replace("__", " ").replace("_", " ").split()).strip()
@@ -41,7 +50,7 @@ def get_manga_short_name(manga_name):
         conn.close()
         return row[0]
     
-    print(f"  [AI] Generando nombre corto de marca para: {manga_name}")
+    # print(f"  [AI] Generando nombre corto de marca para: {manga_name}")
     prompt = f"Provide a short, recognizable, and catchy brand name (max 25 characters) for this manga series: '{manga_name.replace('_', ' ')}'. Output ONLY the name."
     short_name = manga_name.replace('_', ' ')[:25]
     try:
@@ -55,7 +64,7 @@ def get_manga_short_name(manga_name):
     return short_name
 
 def generate_metadata(manga_name, start_cap, end_cap, part_num=None):
-    print(f"--- Generating Metadata for {manga_name} (Chapters {start_cap}-{end_cap}) ---")
+    print_progress(0, 1, prefix="Metadatos Recap")
     long_script = db_manager.get_page_script(manga_name, start_cap, 1)
     if not long_script:
         _, long_script = db_manager.get_short_script(manga_name)
@@ -81,13 +90,13 @@ def generate_metadata(manga_name, start_cap, end_cap, part_num=None):
     metadata_raw = None
     for model_name in MODELS_TO_TRY:
         success = False
-        # Intentar con todas las claves si falla por cuota
         attempts_without_sleep = 0
         sleep_cycles = 0
+        total_active_keys = max(1, len(api_rotator.get_all_keys()))
         while True:
             try:
                 model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt)
+                response = model.generate_content(prompt, request_options={"timeout": 60})
                 json_str = response.text.replace("```json", "").replace("```", "").strip()
                 if "{" in json_str:
                     json_str = json_str[json_str.find("{"):json_str.rfind("}")+1]
@@ -99,21 +108,28 @@ def generate_metadata(manga_name, start_cap, end_cap, part_num=None):
                 if "429" in err or "quota" in err or "limit" in err:
                     failed_key = api_rotator.get_current_key()
                     api_rotator.report_failed_key(failed_key)
+                    mask = failed_key[-4:] if failed_key else "unknown"
+                    print(f"\n  [ROTATOR] La clave ...{mask} ha fallado o alcanzado límite. Buscando siguiente...")
                     attempts_without_sleep += 1
-                    if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                    if attempts_without_sleep >= total_active_keys:
                         sleep_cycles += 1
                         if sleep_cycles > 2:
-                            print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
                             break
-                        print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
+                        print("  [ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                         import time
                         time.sleep(60)
                         attempts_without_sleep = 0
                     new_key = api_rotator.get_next_key()
+                    print("  [ROTATOR] Reintentando generación con nueva clave...")
                     genai.configure(api_key=new_key)
-                    print(f"  [ROTATOR] Reintentando generación con nueva clave...")
+                    continue
+                elif any(x in err for x in ["deadline", "timeout", "connection", "unavailable", "socket", "502", "503", "504"]):
+                    print(f"\n  [CONEXIÓN] La llamada se ha colgado o agotado el tiempo de espera. Reintentando con la misma clave en 10 segundos...")
+                    import time
+                    time.sleep(10)
                     continue
                 else:
+                    print(f"\n  [ERROR] Error inesperado en generación de metadatos: {type(e).__name__}: {e}")
                     break
         if success: break
 
@@ -148,7 +164,8 @@ def generate_metadata(manga_name, start_cap, end_cap, part_num=None):
     out_path = os.path.join(output_dir, f"Capitulo_{start_cap}_metadata.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(final_metadata, f, indent=4, ensure_ascii=False)
-    print(f"  [OK] Metadata saved (Title: {len(final_title)} chars): {out_path}")
+    print_progress(1, 1, prefix="Metadatos Recap")
+    print()
     return out_path
 
 if __name__ == "__main__":
@@ -163,10 +180,10 @@ if __name__ == "__main__":
     db_manager.init_db()
     
     if args.short:
-        print(f"--- Generating SHORT Metadata for {args.manga} ---")
+        print_progress(0, 1, prefix="Metadatos Short")
         short_script, _ = db_manager.get_short_script(args.manga)
         if not short_script:
-            print("  [ERROR] No short script found in DB.")
+            print("\n  [ERROR] No short script found in DB.")
             sys.exit(1)
             
         manga_title_clean = clean_manga_title(args.manga)
@@ -194,10 +211,11 @@ if __name__ == "__main__":
             success = False
             attempts_without_sleep = 0
             sleep_cycles = 0
+            total_active_keys = max(1, len(api_rotator.get_all_keys()))
             while True:
                 try:
                     model = genai.GenerativeModel(model_name)
-                    response = model.generate_content(prompt)
+                    response = model.generate_content(prompt, request_options={"timeout": 60})
                     json_str = response.text.replace("```json", "").replace("```", "").strip()
                     if "{" in json_str:
                         json_str = json_str[json_str.find("{"):json_str.rfind("}")+1]
@@ -209,25 +227,33 @@ if __name__ == "__main__":
                     if "429" in err or "quota" in err or "limit" in err:
                         failed_key = api_rotator.get_current_key()
                         api_rotator.report_failed_key(failed_key)
+                        mask = failed_key[-4:] if failed_key else "unknown"
+                        print(f"\n  [ROTATOR] La clave ...{mask} ha fallado o alcanzado límite. Buscando siguiente...")
                         attempts_without_sleep += 1
-                        if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                        if attempts_without_sleep >= total_active_keys:
                             sleep_cycles += 1
                             if sleep_cycles > 2:
-                                print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
                                 break
-                            print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
+                            print("  [ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                             import time
                             time.sleep(60)
                             attempts_without_sleep = 0
                         new_key = api_rotator.get_next_key()
+                        print("  [ROTATOR] Reintentando generación con nueva clave...")
                         genai.configure(api_key=new_key)
-                        print(f"  [ROTATOR] Reintentando generación con nueva clave...")
                         continue
-                    else: break
+                    elif any(x in err for x in ["deadline", "timeout", "connection", "unavailable", "socket", "502", "503", "504"]):
+                        print(f"\n  [CONEXIÓN] La llamada se ha colgado o agotado el tiempo de espera. Reintentando con la misma clave en 10 segundos...")
+                        import time
+                        time.sleep(10)
+                        continue
+                    else:
+                        print(f"\n  [ERROR] Error inesperado en generación de metadatos short: {type(e).__name__}: {e}")
+                        break
             if success: break
 
         if not metadata_raw:
-            print("  [ERROR] Could not generate short metadata.")
+            print("\n  [ERROR] Could not generate short metadata.")
             sys.exit(1)
             
         final_metadata = {
@@ -242,7 +268,8 @@ if __name__ == "__main__":
         out_path = os.path.join(output_dir, "short_youtube_data.json")
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(final_metadata, f, indent=4, ensure_ascii=False)
-        print(f"  [OK] Short Metadata saved: {out_path}")
+        print_progress(1, 1, prefix="Metadatos Short")
+        print()
     else:
         if args.start is None or args.end is None:
             print("  [ERROR] --start and --end are required for full video metadata.")

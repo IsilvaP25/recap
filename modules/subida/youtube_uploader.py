@@ -68,7 +68,11 @@ def get_authenticated_service():
         youtube_service.channels().list(part="id", mine=True).execute()
     except Exception as e:
         err_str = str(e).lower()
-        if "invalid_grant" in err_str or "expired" in err_str or "revoked" in err_str or "credentials" in err_str:
+        if "quota" in err_str or "limit" in err_str or "429" in err_str:
+            print(f"\n[QUOTA_EXCEEDED] Límite de cuota de YouTube alcanzado al validar credenciales: {e}")
+            import sys
+            sys.exit(42)
+        elif "invalid_grant" in err_str or "expired" in err_str or "revoked" in err_str or "credentials" in err_str:
             print(f"  [YouTube] [WARNING] Error de validación con token existente: {e}")
             if os.path.exists(token_path):
                 try:
@@ -246,6 +250,55 @@ def wait_for_processing(youtube, video_id, check_interval=30):
         
     print("  [YouTube] Se alcanzó el tiempo de espera límite sin completarse el procesamiento.")
     return False
+def clean_title(title, manga_name):
+    import re
+    # Normalize and build variants
+    variants = [
+        manga_name,
+        manga_name.replace('_', ' '),
+        manga_name.replace(' ', '_'),
+    ]
+    # Remove duplicates and empty strings, sort by length descending
+    variants = sorted(list(set(v.strip() for v in variants if v.strip())), key=len, reverse=True)
+    
+    cleaned = title
+    for var in variants:
+        pattern = re.compile(re.escape(var), re.IGNORECASE)
+        cleaned = pattern.sub("", cleaned)
+        
+    # Clean up double spaces or spaces around remaining text
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    
+    # Remove leftover separators at boundaries (beginning, end, or before hashtags)
+    # Separators: - – — : |
+    cleaned = re.sub(r'^\s*[-–—:|]\s*', '', cleaned)
+    # Matches separator before hashtags or at the end
+    cleaned = re.sub(r'\s*[-–—:|]\s*(?=#|$)', '', cleaned)
+    
+    # Clean up sequenced connectors/prepositions like "de de", "de a", "de en", "de para", "del al", "de del"
+    # When replacing, we keep the second preposition (e.g. "de a" -> "a", "de en" -> "en")
+    cleaned = re.sub(r'\b(de|del|of|con|en)\s+(a|en|para|por|de|del|of|con|al)\b', r'\2', cleaned, flags=re.IGNORECASE)
+    
+    # Remove leftover connectors followed by punctuation, space-question mark, emoji, hashtag or end of string
+    connector_pat = re.compile(r'\b(de|del|of|con|with|vs|contra|en|sobre)\b\s*(?=[?!\.#\-\–\—\|]|$)', re.IGNORECASE)
+    cleaned = connector_pat.sub("", cleaned)
+    
+    # Let's clean up space before question marks or punctuation
+    cleaned = re.sub(r'\s+([?!\.,])', r'\1', cleaned)
+    
+    # Clean up double spaces again
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    
+    # Let's run a secondary pass to remove separators that might have been exposed
+    cleaned = re.sub(r'^\s*[-–—:|]\s*', '', cleaned)
+    cleaned = re.sub(r'\s*[-–—:|]\s*(?=#|$)', '', cleaned)
+    
+    # If the title ends up empty or only punctuation/emojis, return a fallback
+    if not re.search(r'[a-zA-Z0-9]', cleaned):
+        emojis = "".join(c for c in cleaned if ord(c) > 0x1000 or c in "😱🤯💔😈😭")
+        cleaned = f"¿EL FINAL QUE NO ESPERABAS? {emojis}".strip()
+        
+    return cleaned
 
 if __name__ == "__main__":
     import argparse
@@ -282,9 +335,11 @@ if __name__ == "__main__":
             print(f"  [PROGRAMACIÓN] Estreno fijado para: {publish_at}")
 
         # Insertar body con publishAt si existe
+        raw_title = meta.get('clickbait_title', f"{args.manga} Recap")
+        cleaned_title = clean_title(raw_title, args.manga)[:100]
         body = {
             'snippet': {
-                'title': meta.get('clickbait_title', f"{args.manga} Recap")[:100],
+                'title': cleaned_title,
                 'description': meta.get('description', f"Recap of {args.manga}"),
                 'tags': meta.get('tags', []),
                 'categoryId': "22"
@@ -300,6 +355,10 @@ if __name__ == "__main__":
         if youtube == "MOCK_SERVICE":
             import time
             video_id = f"mock_yt_{int(time.time())}"
+            print(f"[MOCK] Datos del snippet de subida:")
+            print(f"  - Título: {body['snippet']['title']}")
+            print(f"  - Descripción: {body['snippet']['description']}")
+            print(f"  - Tags: {body['snippet']['tags']}")
             print(f"Video subido con ID: {video_id}")
             print(f"\n[DONE] PROCESO COMPLETADO: https://youtu.be/{video_id}")
             import sys

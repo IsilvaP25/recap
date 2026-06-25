@@ -19,7 +19,7 @@ def detectar_y_procesar_maraton(manga_name, p_num, base_proj, uploader_path):
     print(f"\n[AUTO-MARATÓN] ¡Se ha subido la Parte 5 de {manga_name}! Iniciando compilación de las Partes 1 a 5...")
     
     compilation_dir = os.path.join(base_proj, "outputs", manga_name, "FINAL_PUBLICATION", "Maraton_Parte_1_al_5")
-    if os.path.exists(os.path.join(compilation_dir, "uploaded.flag")):
+    if db_manager.is_maraton_uploaded(manga_name) or os.path.exists(os.path.join(compilation_dir, "uploaded.flag")):
         print(f"  [AUTO-MARATÓN] La compilación ya fue creada y subida anteriormente. Saltando.")
         return
         
@@ -222,6 +222,7 @@ def detectar_y_procesar_maraton(manga_name, p_num, base_proj, uploader_path):
     from modules.flows.common import run_pipeline_step
     if run_pipeline_step("Upload YouTube Maratón", cmd_upload):
         db_manager.update_last_upload_date(proximo_slot)
+        db_manager.mark_maraton_as_uploaded(manga_name)
         with open(os.path.join(compilation_dir, "uploaded.flag"), "w") as flag:
             flag.write(f"Uploaded successfully at slot: {proximo_slot}")
         print(f"  [AUTO-MARATÓN] [OK] Compilación de las Partes 1 a 5 programada para: {proximo_slot}.")
@@ -297,7 +298,7 @@ def iniciar_flujo():
             # Si ya se subió la Parte 5 (is_uploaded = 1) pero no existe la carpeta/flag de la maratón,
             # la procesamos automáticamente al inicio de este manga.
             compilation_dir = os.path.join(base_proj, "outputs", manga_name, "FINAL_PUBLICATION", "Maraton_Parte_1_al_5")
-            if not os.path.exists(os.path.join(compilation_dir, "uploaded.flag")):
+            if not db_manager.is_maraton_uploaded(manga_name) and not os.path.exists(os.path.join(compilation_dir, "uploaded.flag")):
                 import sqlite3
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()

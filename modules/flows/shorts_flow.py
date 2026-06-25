@@ -410,7 +410,138 @@ def delete_local_video(file_path):
         print(f"  [WARNING] [Limpieza] Error al eliminar el archivo local {file_path}: {e}")
         return False
 
-def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_client):
+def regenerar_archivos_short_manga(manga, pdf_base, base_proj):
+    # 1. Buscar el PDF
+    pdf_dir = os.path.join(pdf_base, manga)
+    if not os.path.exists(pdf_dir):
+        print(f"  [ERROR] No existe la carpeta de PDF: {pdf_dir}")
+        return False
+        
+    pdf_path = os.path.join(pdf_dir, "Capitulo_1.pdf")
+    if not os.path.exists(pdf_path):
+        pdf_path = os.path.join(pdf_dir, "1.pdf")
+    if not os.path.exists(pdf_path):
+        all_pdfs = sorted([f for f in os.listdir(pdf_dir) if f.endswith(".pdf")], key=extract_num)
+        if all_pdfs:
+            pdf_path = os.path.join(pdf_dir, all_pdfs[0])
+        else:
+            pdf_path = None
+            
+    if not pdf_path:
+        print(f"  [ERROR] No se encontró ningún PDF en {pdf_dir}")
+        return False
+        
+    # Verificar si faltan los metadatos o el guion
+    metadata_path_gemini = os.path.join(base_proj, "outputs", manga, "Scripts", "short_youtube_data.json")
+    script_path_gemini = os.path.join(base_proj, "outputs", manga, "Scripts", "Short_guion_ESP.txt")
+    
+    if not os.path.exists(metadata_path_gemini) or not os.path.exists(script_path_gemini):
+        print(f"  [AVISO] Faltan guion o metadatos de Gemini para {manga}. Generándolos...")
+        try:
+            script_ok = run_pipeline_step(
+                f"Guion Short {manga}", 
+                ["modules/gemini/manga_scriptwriter.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
+            )
+            if script_ok:
+                trans_ok = run_pipeline_step(
+                    f"Traducción Short {manga}", 
+                    ["modules/guion_metadatos/script_translator.py", "--manga", manga, "--chapter", "1"]
+                )
+                if trans_ok:
+                    meta_ok = run_pipeline_step(
+                        f"Metadatos Short {manga}", 
+                        ["modules/gemini/metadata_generator.py", "--manga", manga, "--short"]
+                    )
+                    if not meta_ok:
+                        return False
+                else:
+                    return False
+            else:
+                return False
+        except Exception as e:
+            print(f"  [ERROR] Falló la generación de guion/metadatos: {e}")
+            return False
+            
+    # Verificar si falta el video
+    video_path_gemini = os.path.join(base_proj, "outputs", manga, "VIDEOS", "Short_1.mp4")
+    if not os.path.exists(video_path_gemini):
+        print(f"  [AVISO] Falta el video de Gemini para {manga}. Generando multimedia...")
+        try:
+            audio_ok = run_pipeline_step(
+                f"Audio Short Gemini {manga}",
+                ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short"]
+            )
+            if audio_ok:
+                video_ok = run_pipeline_step(
+                    f"Video Short Gemini {manga}",
+                    ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
+                )
+                if video_ok:
+                    db_manager.mark_short_video_created(manga, 1)
+                    print(f"  [OK] Video short recreado con éxito para {manga}.")
+                else:
+                    return False
+            else:
+                return False
+        except Exception as e:
+            print(f"  [ERROR] Falló la generación multimedia: {e}")
+            return False
+            
+    return True
+
+def obtener_siguiente_slot_con_gaps():
+    import datetime
+    import os
+    from zoneinfo import ZoneInfo
+    
+    # Obtener timezone
+    tz_name = os.getenv("SHORTS_TIMEZONE")
+    if tz_name:
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception as e:
+            print(f"  [AVISO] No se pudo cargar la zona horaria {tz_name}: {e}. Se usará la zona local.")
+            tz = datetime.datetime.now().astimezone().tzinfo
+    else:
+        tz = datetime.datetime.now().astimezone().tzinfo
+        
+    now = datetime.datetime.now(tz)
+    slots = [8, 10, 12, 14, 16, 18, 20, 22]
+    
+    # Obtener todas las fechas ocupadas normalizadas
+    scheduled_dates = db_manager.get_all_scheduled_short_dates()
+    
+    def normalize_slot(dt):
+        return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+        
+    occupied = set()
+    for d_str in scheduled_dates:
+        try:
+            dt_parsed = datetime.datetime.fromisoformat(d_str)
+            occupied.add(normalize_slot(dt_parsed))
+        except Exception:
+            pass
+            
+    # Buscar el primer slot libre a partir de hoy (buscamos hasta 90 días en el futuro)
+    for offset_days in range(90):
+        current_date = (now + datetime.timedelta(days=offset_days)).date()
+        for hour in slots:
+            candidate = datetime.datetime.combine(
+                current_date, 
+                datetime.time(hour=hour, minute=0, second=0)
+            ).replace(tzinfo=tz)
+            
+            # Margen de seguridad de 5 minutos
+            if candidate > now + datetime.timedelta(minutes=5):
+                candidate_norm = normalize_slot(candidate)
+                if candidate_norm not in occupied:
+                    return candidate.isoformat()
+                    
+    # Fallback si no encuentra (muy improbable)
+    last_date_str = db_manager.get_last_scheduled_short_date()
+    return obtener_siguiente_slot_gemini(last_date_str)
+
+def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_client, rellenar_gaps=False):
     import time
     import re
     import sys
@@ -419,41 +550,40 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
     print("\n" + "-"*50)
     print(f"Procesando subida de Shorts para: {manga.replace('_', ' ')}")
     
-    # Rutas locales de los videos
+    # Rutas locales de los videos (sólo Gemini)
     video_path_gemini = os.path.join(base_proj, "outputs", manga, "VIDEOS", "Short_1.mp4")
-    video_path_ollama = os.path.join(base_proj, "outputs", manga, "VIDEOS", "Short_1_OLLAMA.mp4")
-    
-    # Rutas locales de los metadatos
     metadata_path_gemini = os.path.join(base_proj, "outputs", manga, "Scripts", "short_youtube_data.json")
-    metadata_path_ollama = os.path.join(base_proj, "outputs", manga, "Scripts", "short_youtube_data_OLLAMA.json")
 
-    # Consultar base de datos para ver el estado actual de este short
-    conn = sqlite3.connect(db_manager.DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('SELECT is_uploaded, scheduled_date FROM shorts WHERE manga = ?', (manga.replace(' ', '_'),))
-    row = cursor.fetchone()
-    conn.close()
+    status_map = db_manager.get_video_status(manga, 'short', '1')
+    gemini_status = status_map.get('gemini', 'pending_upload')
     
-    is_uploaded = row[0] if row and row[0] is not None else 0
-    stored_scheduled_date = row[1] if row else None
-    
-    if is_uploaded >= 2:
-        print(f"  [OK] Ambos Shorts para {manga} ya han sido subidos a YouTube (Gemini y Ollama).")
+    if gemini_status in ['uploaded', 'reuploaded']:
+        print(f"  [OK] El Short Gemini para {manga} ya ha sido subido a YouTube.")
         return True
-
-    # --- PASO 1: GEMINI (10:00 AM / 3:00 PM / 8:00 PM) ---
-    if is_uploaded == 0:
-        if not os.path.exists(video_path_gemini):
-            print(f"  [ERROR] El video de Gemini no existe: {video_path_gemini}")
-            return False
-        if not os.path.exists(metadata_path_gemini):
-            print(f"  [ERROR] Los metadatos de Gemini no existen: {metadata_path_gemini}")
-            return False
-
-        last_date_str = db_manager.get_last_scheduled_short_date()
-        scheduled_date_iso = obtener_siguiente_slot_gemini(last_date_str)
         
-        print(f"\n[Paso 1/2] Programando Short Gemini en slot para: {scheduled_date_iso}")
+    subir_gemini = gemini_status in ['pending_upload', 'repaired']
+    
+    if gemini_status == 'pending_repair':
+        print(f"  [AVISO] El short Gemini para {manga} está PENDIENTE DE REPARACIÓN. Se omitirá su subida.")
+
+    # --- PASO 1: GEMINI ---
+    if subir_gemini:
+        if not os.path.exists(video_path_gemini) or not os.path.exists(metadata_path_gemini):
+            print(f"  [AVISO] Faltan archivos físicos para {manga}. Intentando regenerarlos sobre la marcha...")
+            pdf_base = os.path.join(base_proj, "pdf_storage")
+            success = regenerar_archivos_short_manga(manga, pdf_base, base_proj)
+            if not success:
+                print(f"  [ERROR] No se pudieron regenerar los archivos para {manga}. Se omitirá su subida.")
+                subir_gemini = False
+
+    if subir_gemini:
+        if rellenar_gaps:
+            scheduled_date_iso = obtener_siguiente_slot_con_gaps()
+        else:
+            last_date_str = db_manager.get_last_scheduled_short_date()
+            scheduled_date_iso = obtener_siguiente_slot_gemini(last_date_str)
+        
+        print(f"\nProgramando Short Gemini en slot para: {scheduled_date_iso}")
         try:
             command = [
                 sys.executable, uploader_path, 
@@ -483,7 +613,19 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
                 return False
                 
             print(f"  [OK] Subida Gemini exitosa. ID: {youtube_id}")
-            db_manager.mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date_iso, 1)
+            
+            if gemini_status == 'repaired':
+                db_manager.mark_deleted_video_as_reuploaded(manga, 'short', '1', 'gemini', youtube_id)
+                # También actualizar la tabla shorts para re-agregar el ID
+                conn = sqlite3.connect(db_manager.DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("UPDATE shorts SET youtube_id = ?, is_uploaded = 2 WHERE manga = ?", (youtube_id, manga.replace(' ', '_'),))
+                conn.commit()
+                conn.close()
+                print("  [DB] Short reparado de Gemini marcado como re-subido.")
+            else:
+                # Al ser Gemini el único video, marcar directamente como subido (is_uploaded = 2)
+                db_manager.mark_short_as_uploaded_single(manga, youtube_id, scheduled_date_iso)
             
             if mock_youtube:
                 processed = wait_for_processing(None, youtube_id)
@@ -494,114 +636,23 @@ def procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_clie
                 print("  [WARNING] [YouTube] El video Gemini no se procesó. Deteniendo flujo.")
                 return False
                 
-            is_uploaded = 1
-            stored_scheduled_date = scheduled_date_iso
+            delete_local_video(video_path_gemini)
+            return True
             
         except QuotaExceededException:
             raise
         except Exception as e:
             print(f"  [ERROR] Error durante subida Gemini: {e}")
             return False
-
-    # --- PASO 2: OLLAMA (30 mins después de Gemini) ---
-    if is_uploaded == 1:
-        if not os.path.exists(video_path_ollama):
-            print(f"  [ERROR] El video de Ollama no existe: {video_path_ollama}")
-            return False
-        if not os.path.exists(metadata_path_ollama):
-            print(f"  [ERROR] Los metadatos de Ollama no existen: {metadata_path_ollama}")
-            return False
-
-        scheduled_date_iso = obtener_slot_ollama(stored_scheduled_date)
-        
-        print(f"\n[Paso 2/2] Programando Short Ollama para: {scheduled_date_iso}")
-        try:
-            command = [
-                sys.executable, uploader_path, 
-                "--video", video_path_ollama, 
-                "--manga", manga, 
-                "--schedule", scheduled_date_iso,
-                "--json", metadata_path_ollama
-            ]
-            env = os.environ.copy()
-            env["PYTHONPATH"] = base_proj + os.pathsep + env.get("PYTHONPATH", "")
-            output_str = run_upload_subprocess(command, env)
             
-            youtube_id = None
-            if mock_youtube:
-                youtube_id = f"mock_yt_o1_{int(time.time())}"
-            else:
-                match = re.search(r'Video subido con ID:\s*([a-zA-Z0-9_-]+)', output_str)
-                if match:
-                    youtube_id = match.group(1)
-                else:
-                    match_url = re.search(r'https://youtu\.be/([a-zA-Z0-9_-]+)', output_str)
-                    if match_url:
-                        youtube_id = match_url.group(1)
-                        
-            if not youtube_id:
-                print("  [ERROR] No se pudo determinar el ID de YouTube de la subida Ollama.")
-                return False
-                
-            print(f"  [OK] Subida Ollama exitosa. ID: {youtube_id}")
-            db_manager.mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date_iso, 2)
-            
-            if mock_youtube:
-                processed = wait_for_processing(None, youtube_id)
-            else:
-                processed = wait_for_processing(yt_client, youtube_id)
-                
-            if not processed:
-                print("  [WARNING] [YouTube] El video Ollama no se procesó. Deteniendo flujo.")
-                return False
-                
-            delete_local_video(video_path_gemini)
-            delete_local_video(video_path_ollama)
-            return True
-            
-        except QuotaExceededException:
-            raise
-        except Exception as e:
-            print(f"  [ERROR] Error durante subida Ollama: {e}")
-            return False
     return False
 
 def iniciar_subida_shorts_unificada(mangas_disponibles, pdf_base):
     print("\n" + "="*50)
-    print("   --- SUBIR SHORTS A YOUTUBE (OLLAMA INTEGRADO) ---")
+    print("   --- SUBIR SHORTS A YOUTUBE (SOLO GEMINI HABILITADO) ---")
     print("="*50)
-    
-    # Identificar mangas con Gemini subido (is_uploaded == 1) pero Ollama pendiente
-    import sqlite3
-    mangas_pendientes = []
-    conn = sqlite3.connect(db_manager.DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('SELECT manga, is_uploaded FROM shorts WHERE is_uploaded == 1')
-    rows = cursor.fetchall()
-    conn.close()
-    
-    # Filtrar solo si el manga está en los disponibles
-    for row in rows:
-        manga_name_db = row[0]
-        for m_disp in mangas_disponibles:
-            if m_disp.replace(' ', '_') == manga_name_db.replace(' ', '_'):
-                mangas_pendientes.append(m_disp)
-                break
-                
-    if mangas_pendientes:
-        print(f"\n⚠️ [AVISO] Se detectaron {len(mangas_pendientes)} shorts con subidas de Ollama pendientes:")
-        for i, m in enumerate(mangas_pendientes, 1):
-            print(f" {i}. {m.replace('_', ' ')}")
-        print("\n[POLÍTICA] No se subirán nuevos videos hasta ponerse al día con los shorts pendientes de Ollama.")
-        
-        confirm = input("\n¿Deseas iniciar el completado de Ollama pendiente ahora? (s/n): ").lower()
-        if confirm == 's':
-            iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base)
-        else:
-            print("Operación cancelada. Debes completar las subidas de Ollama pendientes antes de continuar.")
-    else:
-        print("\n✅ [OK] No hay subidas de Ollama pendientes. Procediendo con la subida de nuevos shorts...")
-        iniciar_subida_shorts()
+    print("\n✅ [OK] Ollama deshabilitado. Procediendo con la subida de shorts de Gemini...")
+    iniciar_subida_shorts()
 
 def iniciar_subida_shorts():
     import time
@@ -651,17 +702,21 @@ def iniciar_subida_shorts():
     for m in pending_mangas:
         print(f" - {m.replace('_', ' ')}")
 
-    confirm = input("\n¿Deseas iniciar la subida y programacion secuencial? (s/n): ").lower()
+    confirm = input("\n¿Deseas iniciar la subida y programacion de shorts? (s/n): ").lower()
     if confirm != 's':
         print("Subida cancelada.")
         return
+
+    rellenar_gaps = input("¿Deseas activar el relleno de huecos (gaps) en el calendario? (s/n): ").lower() == 's'
+    if rellenar_gaps:
+        print("ℹ️ [SISTEMA] Se detectarán huecos libres en el calendario a partir de hoy y se rellenarán con los shorts de Gemini.")
 
     uploader_path = os.path.join(base_proj, "modules", "subida", "youtube_uploader.py")
 
     try:
         for manga in pending_mangas:
             yt_client_for_manga = None if mock_youtube else yt_client
-            procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_client_for_manga)
+            procesar_subida_manga(manga, base_proj, uploader_path, mock_youtube, yt_client_for_manga, rellenar_gaps)
     except QuotaExceededException as e:
         print(f"\n❌ [CUOTA EXCEDIDA] Se detiene la subida de shorts restante: {e}")
 

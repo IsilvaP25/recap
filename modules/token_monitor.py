@@ -48,14 +48,24 @@ def validar_acceso_gemini():
                 error_str = str(e)
                 motivo = "Desconocido"
                 
+                is_exhausted = False
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                     motivo = "Cuota agotada (Limit 0)"
+                    is_exhausted = True
                 elif "404" in error_str:
                     motivo = "Modelo no encontrado"
                 elif "403" in error_str:
                     motivo = "API Key invalida"
+                    is_exhausted = True
                 
                 print(f"[DESCARTADO] {modelo}: {motivo}")
+                
+                if is_exhausted:
+                    try:
+                        from modules import api_rotator
+                        api_rotator.report_failed_key(keys[key_idx])
+                    except Exception:
+                        pass
                 
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                     print(f" > Cuota del modelo {modelo} agotada. Probando siguiente modelo...")

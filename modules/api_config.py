@@ -44,11 +44,11 @@ _current_api_key_index = 0
 _current_api_key_value = None
 
 def obtener_api_keys_disponibles():
-    """Busca todas las variables GEMINI_API_KEY, GEMINI_API_KEY_1, GEMINI_API_KEY_2..."""
+    """Busca todas las claves que empiecen por GEMINI_API_KEY en el .env, priorizando las gratuitas"""
     keys = []
     
-    # 1. Buscar claves numeradas (GEMINI_API_KEY_1, _2...)
-    for i in range(1, 20):
+    # 1. Buscar claves numeradas a partir de la 2 (GEMINI_API_KEY_2, _3...)
+    for i in range(2, 20):
         kx = os.getenv(f"GEMINI_API_KEY_{i}")
         if kx and kx not in keys:
             keys.append(kx)
@@ -57,6 +57,20 @@ def obtener_api_keys_disponibles():
     old_key = os.getenv("GEMINI_API_KEY")
     if old_key and old_key not in keys:
         keys.append(old_key)
+        
+    # 3. Poner GEMINI_API_KEY_1 al final (ya que es la de pago)
+    key1 = os.getenv("GEMINI_API_KEY_1")
+    if key1 and key1 not in keys:
+        keys.append(key1)
+        
+    try:
+        from modules.api_rotator import _get_exhausted_keys
+        exhausted = _get_exhausted_keys()
+        filtered = [k for k in keys if k not in exhausted]
+        if filtered:
+            return filtered
+    except Exception:
+        pass
         
     return keys
 

@@ -23,7 +23,7 @@ def set_high_priority():
 
 # Detectar núcleos y calcular hilos
 CORES = multiprocessing.cpu_count()
-THREADS = max(1, int(CORES * 0.9))
+THREADS = max(1, int(CORES * 0.6))
 MAX_GPU_PARALLEL = 3 # Límite de sesiones NVENC simultáneas para evitar errores de driver
 
 _encoder_cache = None
@@ -43,6 +43,7 @@ def get_encoder():
     return _encoder_cache
 
 ENCODER = get_encoder()
+PRESET = 'p1' if ENCODER == 'h264_nvenc' else 'ultrafast'
 
 def get_audio_duration(audio_path):
     cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', audio_path]
@@ -200,7 +201,7 @@ def render_segment_task(args):
             '-map', '0:v',
             '-map', '1:a',
             '-t', f'{render_dur:.3f}',
-            '-c:v', ENCODER, '-preset', 'p1', '-pix_fmt', 'yuv420p',
+            '-c:v', ENCODER, '-preset', PRESET, '-pix_fmt', 'yuv420p',
             seg_p
         ]
         
@@ -526,7 +527,7 @@ def assemble_video(manga_name, chapter_num, pdf_path, mode="full", page_limit=No
             cta_img.save(cta_img_p)
             
             # Generar video de CTA silencioso (sin pista de audio)
-            subprocess.run(['ffmpeg', '-y', '-loop', '1', '-i', cta_img_p, '-t', '5', '-c:v', ENCODER, '-preset', 'p1', '-pix_fmt', 'yuv420p', '-r', '24', cta_vid_p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(['ffmpeg', '-y', '-loop', '1', '-i', cta_img_p, '-t', '5', '-c:v', ENCODER, '-preset', PRESET, '-pix_fmt', 'yuv420p', '-r', '24', cta_vid_p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if os.path.exists(cta_vid_p):
                 segs.append((cta_vid_p, 5.0))
 
@@ -610,7 +611,7 @@ def assemble_video(manga_name, chapter_num, pdf_path, mode="full", page_limit=No
                 f_cmd += ['-map', '0:v']
                 if os.path.exists(master_audio): f_cmd += ['-map', '0:a']
             
-            f_cmd += ['-c:v', ENCODER, '-preset', 'p1', '-pix_fmt', 'yuv420p', '-r', '24', '-c:a', 'aac', out_video]
+            f_cmd += ['-c:v', ENCODER, '-preset', PRESET, '-pix_fmt', 'yuv420p', '-r', '24', '-c:a', 'aac', out_video]
             
             rf = subprocess.run(f_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if rf.returncode == 0: 

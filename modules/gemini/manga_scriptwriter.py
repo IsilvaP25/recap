@@ -30,6 +30,15 @@ load_dotenv(os.path.join(base_dir, '.env'))
 # Inicializar con una clave del pool
 genai.configure(api_key=api_rotator.get_any_key())
 
+def print_progress(completed, total, prefix=''):
+    longitud = 10
+    porcentaje = f"{100 * (completed / float(total)):.1f}%"
+    llenado = int(longitud * completed // total)
+    barra = '#' * llenado + '-' * (longitud - llenado)
+    linea = f"\r\x1b[K  [{prefix}] |{barra}| {porcentaje}"
+    sys.stdout.write(linea)
+    sys.stdout.flush()
+
 SAFETY_SETTINGS = [
     { "category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.BLOCK_NONE },
     { "category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.BLOCK_NONE },
@@ -120,7 +129,11 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
         
     total_pages = len(doc); 
     if limit_pages: total_pages = min(total_pages, limit_pages)
-    print(f"--- Auditoría de Generación: {manga_name} Cap {chapter_num} ({total_pages} pág) ---")
+
+    # Initial progress
+    pending = [i+1 for i in range(total_pages) if not db_manager.get_page_script(manga_name, chapter_num, i+1)]
+    completed_pages = total_pages - len(pending)
+    print_progress(completed_pages, total_pages, prefix="Guion Recap")
 
     # Obtener memoria de capítulos anteriores usando RAG (solo para videos largos)
     rag_context = ""
@@ -128,28 +141,27 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
         from modules.gemini import vector_manager
         consulta = f"historia, personajes principales y eventos importantes del manga {manga_name}"
         rag_context = vector_manager.obtener_contexto_historico(manga_name, chapter_num, consulta, top_k=3)
-    except Exception as re:
-        print(f"  [RAG] [AVISO] No se pudo recuperar contexto de lore: {re}")
+    except Exception:
+        pass
 
     active_models = list(MODELS_TO_TRY)
     while True:
         pending = [i+1 for i in range(total_pages) if not db_manager.get_page_script(manga_name, chapter_num, i+1)]
-        if not pending: break
+        if not pending:
+            print_progress(total_pages, total_pages, prefix="Guion Recap")
+            print()
+            break
             
         actual_batch = batch_size if batch_size > 0 else len(pending)
         batch_nums = pending[:actual_batch]
-        batch_labels = f"{batch_nums[0]}-{batch_nums[-1]}"
         
         imgs = []
         for p_num in batch_nums:
             page = doc.load_page(p_num - 1)
-            # OPTIMIZACIÓN: Matrix 1.0 para ahorrar tokens de tiles
             pix = page.get_pixmap(matrix=fitz.Matrix(1.0,1.0))
             img = Image.open(io.BytesIO(pix.tobytes("png")))
             
-            # PROTECCIÓN MANHWA: Si el alto > 16383, re-escalar para evitar error WebP de Gemini
             if img.height > 16000:
-                print(f"  [SISTEMA] Pág {p_num} es muy larga ({img.height}px). Redimensionando para IA...")
                 scale = 16000 / img.height
                 img = img.resize((int(img.width * scale), 16000), Image.LANCZOS)
             
@@ -158,11 +170,9 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
         batch_success = False
         to_rem = []
         for model_name in active_models:
-            print(f"Probando Lote [{batch_labels}] con: {model_name}")
-            
-            # Intentar con todas las claves disponibles si falla por cuota
             attempts_without_sleep = 0
             sleep_cycles = 0
+            total_active_keys = max(1, len(api_rotator.get_all_keys()))
             while True:
                 try:
                     model = genai.GenerativeModel(
@@ -179,14 +189,12 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
                         prompt = (f"Create an ORIGINAL, FAMILY-FRIENDLY story summary/narration for these {len(batch_nums)} pages in English for accessibility purposes. "
                                  f"DO NOT describe any sensitive, prohibited, or NSFW content. Focus only on plot progression and safe character interactions. "
                                  f"Start directly with ### PAGE_{batch_nums[0]}. No copyrighted transcriptions.")
-                    response = model.generate_content([prompt] + imgs)
+                    response = model.generate_content([prompt] + imgs, request_options={"timeout": 60})
                     
                     try:
                         resp_text = response.text
                     except ValueError as ve:
                         if "candidate" in str(ve).lower() or "block_reason" in str(ve).lower():
-                            print("  [AVISO] Lote bloqueado por seguridad de la IA (block_reason: OTHER). Rellenando con texto por defecto.")
-                            # Guardamos texto dummy para no frenar el pipeline
                             for p_num in batch_nums:
                                 db_manager.save_page_script(manga_name, chapter_num, p_num, "(Escena bloqueada por filtros de seguridad de IA)")
                             batch_success = True
@@ -204,33 +212,40 @@ def generate_script_from_pdf(pdf_path, manga_name, chapter_num, output_file, bat
                         english_text = clean_garbage_text(found[p_num])
                         db_manager.save_page_script(manga_name, chapter_num, p_num, english_text)
                     
-                    print(f"  [OK] Lote [{batch_labels}] guardado.")
+                    pending_now = [i+1 for i in range(total_pages) if not db_manager.get_page_script(manga_name, chapter_num, i+1)]
+                    completed_pages = total_pages - len(pending_now)
+                    print_progress(completed_pages, total_pages, prefix="Guion Recap")
                     batch_success = True; break
                 except Exception as e:
                     err = str(e).lower()
                     if "429" in err or "quota" in err or "limit" in err:
                         failed_key = api_rotator.get_current_key()
                         api_rotator.report_failed_key(failed_key)
+                        mask = failed_key[-4:] if failed_key else "unknown"
+                        print(f"\n  [ROTATOR] La clave ...{mask} ha fallado o alcanzado límite. Buscando siguiente...")
                         attempts_without_sleep += 1
-                        if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                        if attempts_without_sleep >= total_active_keys:
                             sleep_cycles += 1
                             if sleep_cycles > 2:
-                                print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Intentando siguiente modelo...")
                                 to_rem.append(model_name)
                                 break
-                            print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
+                            print("  [ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                             time.sleep(60)
                             attempts_without_sleep = 0
                         new_key = api_rotator.get_next_key()
+                        print("  [ROTATOR] Reintentando generación con nueva clave...")
                         genai.configure(api_key=new_key)
-                        print(f"  [ROTATOR] Reintentando lote con nueva clave...")
-                        continue # Reintentar con nueva clave
+                        continue
+                    elif any(x in err for x in ["deadline", "timeout", "connection", "unavailable", "socket", "502", "503", "504"]):
+                        print(f"\n  [CONEXIÓN] La llamada se ha colgado o agotado el tiempo de espera. Reintentando con la misma clave en 10 segundos...")
+                        time.sleep(10)
+                        continue
                     else:
-                        print(f"  [AVISO] {model_name} falló: {e}")
-                        break # Probar siguiente modelo
+                        print(f"\n  [ERROR] Error inesperado en generación de guión: {type(e).__name__}: {e}")
+                        break
             
             if batch_success: break
-
+ 
         for m in to_rem: 
             if m in active_models: active_models.remove(m)
         if not batch_success:
@@ -289,8 +304,6 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
         return True
 
     # Si llegamos aquí, es porque falta algo o se pidió force
-    print(f"  [GEN] Generando Short y Thumbnail Prompt...")
-    
     # 1. Intentar obtener guiones de página de la DB para generar por texto
     import sqlite3
     conn = sqlite3.connect(db_manager.DB_PATH)
@@ -328,13 +341,13 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
         )
 
     if len(db_rows) > 0:
-        print(f"  [OK] Encontrados {len(db_rows)} guiones de página en DB. Generando Short desde texto...")
+        print_progress(0, 1, prefix="Guion Short")
         full_text = "\n".join([f"PAGE {r[0]}: {r[1]}" for r in db_rows])
         for model_name in MODELS_TO_TRY:
-            print(f"Intentando Short (texto) con: {model_name}...")
             success = False
             attempts_without_sleep = 0
             sleep_cycles = 0
+            total_active_keys = max(1, len(api_rotator.get_all_keys()))
             while True:
                 try:
                     model = genai.GenerativeModel(
@@ -357,7 +370,7 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                             f"The summary must cover the entire plot from start to finish, referencing correct page numbers. Start immediately with [PAGE:1]. Then provide 'THUMBNAIL_PROMPT' at the end.\n\n"
                             f"Detailed Page Descriptions:\n{full_text}"
                         )
-                    response = model.generate_content(prompt)
+                    response = model.generate_content(prompt, request_options={"timeout": 60})
                     full_resp = response.text
                     
                     if "THUMBNAIL_PROMPT" in full_resp:
@@ -375,28 +388,34 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                     db_manager.save_short_script(manga_name, script_part, thumb_part)
                     os.makedirs(os.path.dirname(output_file), exist_ok=True)
                     with open(output_file, "w", encoding="utf-8") as f: f.write(script_part)
-                    print(f"  [OK] Short guardado con éxito (desde texto).")
+                    print_progress(1, 1, prefix="Guion Short")
+                    print()
                     return True
                 except Exception as e:
                     err = str(e).lower()
                     if "429" in err or "quota" in err or "limit" in err:
                         failed_key = api_rotator.get_current_key()
                         api_rotator.report_failed_key(failed_key)
+                        mask = failed_key[-4:] if failed_key else "unknown"
+                        print(f"\n  [ROTATOR] La clave ...{mask} ha fallado o alcanzado límite. Buscando siguiente...")
                         attempts_without_sleep += 1
-                        if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                        if attempts_without_sleep >= total_active_keys:
                             sleep_cycles += 1
                             if sleep_cycles > 2:
-                                print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
                                 break
-                            print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
+                            print("  [ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                             time.sleep(60)
                             attempts_without_sleep = 0
                         new_key = api_rotator.get_next_key()
+                        print("  [ROTATOR] Reintentando Short con nueva clave...")
                         genai.configure(api_key=new_key)
-                        print(f"  [ROTATOR] Reintentando Short con nueva clave...")
+                        continue
+                    elif any(x in err for x in ["deadline", "timeout", "connection", "unavailable", "socket", "502", "503", "504"]):
+                        print(f"\n  [CONEXIÓN] La llamada se ha colgado o agotado el tiempo de espera. Reintentando con la misma clave en 10 segundos...")
+                        time.sleep(10)
                         continue
                     else:
-                        print(f"  [AVISO] {model_name} (texto) falló: {e}")
+                        print(f"\n  [ERROR] Error inesperado en generación de guión short (texto): {type(e).__name__}: {e}")
                         break
         return False
 
@@ -413,12 +432,13 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
             img = img.resize((int(img.width * scale), 16000), Image.LANCZOS)
         imgs.append(img)
 
+    print_progress(0, 1, prefix="Guion Short")
     image_success = False
     for model_name in MODELS_TO_TRY:
-        print(f"Intentando Short (imágenes) con: {model_name}...")
         success = False
         attempts_without_sleep = 0
         sleep_cycles = 0
+        total_active_keys = max(1, len(api_rotator.get_all_keys()))
         while True:
             try:
                 model = genai.GenerativeModel(
@@ -443,7 +463,7 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                     prompt_parts.append(f"PAGE {idx+1}:")
                     prompt_parts.append(img)
                     
-                response = model.generate_content(prompt_parts)
+                response = model.generate_content(prompt_parts, request_options={"timeout": 60})
                 full_resp = response.text
                 
                 if "THUMBNAIL_PROMPT" in full_resp:
@@ -461,7 +481,8 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                 db_manager.save_short_script(manga_name, script_part, thumb_part)
                 os.makedirs(os.path.dirname(output_file), exist_ok=True)
                 with open(output_file, "w", encoding="utf-8") as f: f.write(script_part)
-                print(f"  [OK] Short guardado con éxito (imágenes).")
+                print_progress(1, 1, prefix="Guion Short")
+                print()
                 success = True
                 image_success = True
                 break
@@ -470,21 +491,26 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                 if "429" in err or "quota" in err or "limit" in err:
                     failed_key = api_rotator.get_current_key()
                     api_rotator.report_failed_key(failed_key)
+                    mask = failed_key[-4:] if failed_key else "unknown"
+                    print(f"\n  [ROTATOR] La clave ...{mask} ha fallado o alcanzado límite. Buscando siguiente...")
                     attempts_without_sleep += 1
-                    if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                    if attempts_without_sleep >= total_active_keys:
                         sleep_cycles += 1
                         if sleep_cycles > 2:
-                            print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
                             break
-                        print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
+                        print("  [ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                         time.sleep(60)
                         attempts_without_sleep = 0
                     new_key = api_rotator.get_next_key()
+                    print("  [ROTATOR] Reintentando Short con nueva clave...")
                     genai.configure(api_key=new_key)
-                    print(f"  [ROTATOR] Reintentando Short con nueva clave...")
+                    continue
+                elif any(x in err for x in ["deadline", "timeout", "connection", "unavailable", "socket", "502", "503", "504"]):
+                    print(f"\n  [CONEXIÓN] La llamada se ha colgado o agotado el tiempo de espera. Reintentando con la misma clave en 10 segundos...")
+                    time.sleep(10)
                     continue
                 else:
-                    print(f"  [AVISO] {model_name} (imágenes) falló: {e}")
+                    print(f"\n  [ERROR] Error inesperado en generación de guión short (imagen): {type(e).__name__}: {e}")
                     break
         if success:
             doc.close()
@@ -493,12 +519,10 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
     doc.close()
 
     if not image_success:
-        print(f"  [FALLBACK] Generación basada en imágenes bloqueada o fallida. Generando guiones detallados primero...")
         base_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         temp_full_script = os.path.join(base_proj, "outputs", manga_name, "Scripts", f"Capitulo_1_guion_raw.txt")
         ok = generate_script_from_pdf(pdf_path, manga_name, 1, temp_full_script)
         if not ok:
-            print("  [ERROR] Falló la generación de guiones detallados de respaldo.")
             return False
             
         conn = sqlite3.connect(db_manager.DB_PATH)
@@ -508,13 +532,13 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
         conn.close()
         
         if len(db_rows) > 0:
-            print(f"  [OK] Generando Short desde texto de respaldo...")
+            print_progress(0, 1, prefix="Guion Short")
             full_text = "\n".join([f"PAGE {r[0]}: {r[1]}" for r in db_rows])
             for model_name in MODELS_TO_TRY:
-                print(f"Intentando Short (texto de respaldo) con: {model_name}...")
                 success = False
                 attempts_without_sleep = 0
                 sleep_cycles = 0
+                total_active_keys = max(1, len(api_rotator.get_all_keys()))
                 while True:
                     try:
                         model = genai.GenerativeModel(
@@ -537,7 +561,7 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                                 f"The summary must cover the entire plot from start to finish, referencing correct page numbers. Start immediately with [PAGE:1]. Then provide 'THUMBNAIL_PROMPT' at the end.\n\n"
                                 f"Detailed Page Descriptions:\n{full_text}"
                             )
-                        response = model.generate_content(prompt)
+                        response = model.generate_content(prompt, request_options={"timeout": 60})
                         full_resp = response.text
                         
                         if "THUMBNAIL_PROMPT" in full_resp:
@@ -555,28 +579,34 @@ def generate_short_summary(pdf_path, manga_name, output_file, force=False, langu
                         db_manager.save_short_script(manga_name, script_part, thumb_part)
                         os.makedirs(os.path.dirname(output_file), exist_ok=True)
                         with open(output_file, "w", encoding="utf-8") as f: f.write(script_part)
-                        print(f"  [OK] Short guardado con éxito (desde texto de respaldo).")
+                        print_progress(1, 1, prefix="Guion Short")
+                        print()
                         return True
                     except Exception as e:
                         err = str(e).lower()
                         if "429" in err or "quota" in err or "limit" in err:
                             failed_key = api_rotator.get_current_key()
                             api_rotator.report_failed_key(failed_key)
+                            mask = failed_key[-4:] if failed_key else "unknown"
+                            print(f"\n  [ROTATOR] La clave ...{mask} ha fallado o alcanzado límite. Buscando siguiente...")
                             attempts_without_sleep += 1
-                            if attempts_without_sleep >= len(api_rotator.get_all_keys()):
+                            if attempts_without_sleep >= total_active_keys:
                                 sleep_cycles += 1
                                 if sleep_cycles > 2:
-                                    print(f"\n[ROTATOR] Límite de espera excedido ({sleep_cycles} ciclos) para {model_name}. Probando siguiente modelo...")
                                     break
-                                print("\n[ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
+                                print("  [ROTATOR] Se han agotado todas las API keys en el pool (cuota excedida). Esperando 60 segundos antes de reintentar...")
                                 time.sleep(60)
                                 attempts_without_sleep = 0
                             new_key = api_rotator.get_next_key()
+                            print("  [ROTATOR] Reintentando Short con nueva clave...")
                             genai.configure(api_key=new_key)
-                            print(f"  [ROTATOR] Reintentando Short con nueva clave...")
+                            continue
+                        elif any(x in err for x in ["deadline", "timeout", "connection", "unavailable", "socket", "502", "503", "504"]):
+                            print(f"\n  [CONEXIÓN] La llamada se ha colgado o agotado el tiempo de espera. Reintentando con la misma clave en 10 segundos...")
+                            time.sleep(10)
                             continue
                         else:
-                            print(f"  [AVISO] {model_name} (texto de respaldo) falló: {e}")
+                            print(f"\n  [ERROR] Error inesperado en generación de guión short (fallback): {type(e).__name__}: {e}")
                             break
                             
     return False

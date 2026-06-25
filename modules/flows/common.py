@@ -33,9 +33,9 @@ def run_pipeline_step(step_name, command):
         if not os.path.isabs(script_path):
             script_path = os.path.join(base_proj, script_path)
         
-        # Execute with cwd set to project root, inheriting standard streams for interactive support
+        # Execute with cwd set to project root, inheriting standard streams for interactive support, suppressing python warnings
         process = subprocess.Popen(
-            [sys.executable, script_path] + command[1:],
+            [sys.executable, "-W", "ignore", script_path] + command[1:],
             env=env,
             cwd=base_proj
         )

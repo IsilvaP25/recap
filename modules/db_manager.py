@@ -140,8 +140,25 @@ def init_db():
             status TEXT,
             is_uploaded INTEGER DEFAULT 0,
             youtube_id TEXT,
+            is_maraton_uploaded INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (manga, part_number)
+        )
+    ''')
+    
+    # Table for deleted videos
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS deleted_videos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            manga TEXT,
+            type TEXT,
+            chapter_or_part TEXT,
+            ai_provider TEXT,
+            youtube_id TEXT UNIQUE,
+            title TEXT,
+            description TEXT,
+            status TEXT DEFAULT 'pending_repair',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
@@ -155,6 +172,9 @@ def init_db():
     if 'youtube_id' not in columns:
         print("  [DB] Añadiendo columna youtube_id...")
         cursor.execute('ALTER TABLE pipeline_parts ADD COLUMN youtube_id TEXT')
+    if 'is_maraton_uploaded' not in columns:
+        print("  [DB] Añadiendo columna is_maraton_uploaded...")
+        cursor.execute('ALTER TABLE pipeline_parts ADD COLUMN is_maraton_uploaded INTEGER DEFAULT 0')
         
     # Auto-sincronización de videos ya creados en disco
     outputs_dir = os.path.join(BASE_DIR, "outputs")
@@ -279,6 +299,28 @@ def mark_as_uploaded(manga, part_number, youtube_id):
     conn.commit()
     conn.close()
 
+def mark_maraton_as_uploaded(manga):
+    manga = manga.replace(' ', '_')
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE pipeline_parts 
+        SET is_maraton_uploaded = 1 
+        WHERE manga = ? AND part_number = 5
+    ''')
+    conn.commit()
+    conn.close()
+
+def is_maraton_uploaded(manga):
+    manga = manga.replace(' ', '_')
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT is_maraton_uploaded FROM pipeline_parts WHERE manga = ? AND part_number = 5', (manga,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] == 1 if row and row[0] is not None else False
+
+
 def get_next_upload_slot():
     import datetime
     conn = sqlite3.connect(DB_PATH)
@@ -390,6 +432,14 @@ def get_last_scheduled_short_date():
     conn.close()
     return row[0] if row else None
 
+def get_all_scheduled_short_dates():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT scheduled_date FROM shorts WHERE is_uploaded >= 1 AND scheduled_date IS NOT NULL')
+    rows = cursor.fetchall()
+    conn.close()
+    return [r[0] for r in rows if r[0]]
+
 def mark_short_as_uploaded_with_date_step(manga, youtube_id, scheduled_date, step):
     manga = manga.replace(' ', '_')
     conn = sqlite3.connect(DB_PATH)
@@ -434,13 +484,146 @@ def get_pending_shorts_uploads():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT manga 
+        SELECT DISTINCT manga 
         FROM shorts 
-        WHERE video_created >= 2 AND is_uploaded < 2
+        WHERE (video_created >= 1 AND is_uploaded < 2)
+        OR manga IN (
+            SELECT DISTINCT manga FROM deleted_videos WHERE type = 'short' AND status = 'repaired'
+        )
     ''')
     rows = cursor.fetchall()
     conn.close()
     return [r[0] for r in rows]
+
+def register_deleted_video(manga, type_val, chapter_or_part, ai_provider, youtube_id, title, description):
+    manga = manga.replace(' ', '_')
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO deleted_videos (manga, type, chapter_or_part, ai_provider, youtube_id, title, description, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_repair')
+    ''', (manga, type_val, str(chapter_or_part), ai_provider, youtube_id, title, description))
+    conn.commit()
+    conn.close()
+
+def mark_deleted_video_as_repaired(manga, type_val, chapter_or_part, ai_provider):
+    manga = manga.replace(' ', '_')
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE deleted_videos 
+        SET status = 'repaired' 
+        WHERE manga = ? AND type = ? AND chapter_or_part = ? AND ai_provider = ? AND status = 'pending_repair'
+    ''', (manga, type_val, str(chapter_or_part), ai_provider))
+    conn.commit()
+    conn.close()
+
+def mark_deleted_video_as_reuploaded(manga, type_val, chapter_or_part, ai_provider, new_youtube_id):
+    manga = manga.replace(' ', '_')
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE deleted_videos 
+        SET status = 'reuploaded', youtube_id = ? 
+        WHERE manga = ? AND type = ? AND chapter_or_part = ? AND ai_provider = ? AND status = 'repaired'
+    ''', (new_youtube_id, manga, type_val, str(chapter_or_part), ai_provider))
+    conn.commit()
+    conn.close()
+
+def is_video_pending_repair(manga, type_val, chapter_or_part, ai_provider):
+    manga = manga.replace(' ', '_')
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT 1 FROM deleted_videos 
+        WHERE manga = ? AND type = ? AND chapter_or_part = ? AND ai_provider = ? AND status = 'pending_repair'
+    ''', (manga, type_val, str(chapter_or_part), ai_provider))
+    row = cursor.fetchone()
+    conn.close()
+    return row is not None
+
+def get_video_status(manga, type_val='short', chapter_or_part='1'):
+    manga_key = manga.replace(' ', '_')
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # 1. Obtener registro de shorts o pipeline_parts
+    yt_ids = []
+    is_uploaded_val = 0
+    if type_val == 'short':
+        cursor.execute("SELECT youtube_id, is_uploaded FROM shorts WHERE manga = ?", (manga_key,))
+        row = cursor.fetchone()
+        if row:
+            is_uploaded_val = row[1] or 0
+            if row[0]:
+                yt_ids = [x.strip() for x in row[0].split(',') if x.strip()]
+    else:
+        cursor.execute("SELECT youtube_id, is_uploaded FROM pipeline_parts WHERE manga = ? AND part_number = ?", (manga_key, int(chapter_or_part)))
+        row = cursor.fetchone()
+        if row:
+            is_uploaded_val = row[1] or 0
+            if row[0]:
+                yt_ids = [x.strip() for x in row[0].split(',') if x.strip()]
+                
+    # 2. Consultar deleted_videos
+    cursor.execute("""
+        SELECT ai_provider, youtube_id, status 
+        FROM deleted_videos 
+        WHERE manga = ? AND type = ? AND chapter_or_part = ?
+    """, (manga_key, type_val, str(chapter_or_part)))
+    deleted_rows = cursor.fetchall()
+    conn.close()
+    
+    # Mapear eliminaciones
+    deleted_map = {}
+    for ai, yid, status in deleted_rows:
+        if ai not in deleted_map or status == 'pending_repair':
+            deleted_map[ai] = {'youtube_id': yid, 'status': status}
+            
+    providers = ['gemini', 'ollama'] if type_val == 'short' else ['gemini']
+    status_map = {}
+    
+    for provider in providers:
+        if provider in deleted_map:
+            del_info = deleted_map[provider]
+            if del_info['status'] == 'pending_repair':
+                status_map[provider] = 'pending_repair'
+            elif del_info['status'] == 'repaired':
+                status_map[provider] = 'repaired'
+            else:
+                if del_info['youtube_id'] in yt_ids:
+                    status_map[provider] = 'uploaded'
+                else:
+                    status_map[provider] = 'reuploaded'
+        else:
+            if type_val == 'short':
+                if provider == 'gemini':
+                    if len(yt_ids) == 2:
+                        status_map['gemini'] = 'uploaded'
+                    elif len(yt_ids) == 1:
+                        if 'ollama' in deleted_map:
+                            status_map['gemini'] = 'uploaded'
+                        else:
+                            status_map['gemini'] = 'uploaded' if is_uploaded_val >= 1 else 'pending_upload'
+                    else:
+                        status_map['gemini'] = 'pending_upload'
+                else: # ollama
+                    if len(yt_ids) == 2:
+                        status_map['ollama'] = 'uploaded'
+                    elif len(yt_ids) == 1:
+                        if 'gemini' in deleted_map:
+                            status_map['ollama'] = 'uploaded'
+                        else:
+                            status_map['ollama'] = 'pending_upload'
+                    else:
+                        status_map['ollama'] = 'pending_upload'
+            else: # recap
+                if yt_ids:
+                    status_map['gemini'] = 'uploaded'
+                else:
+                    status_map['gemini'] = 'pending_upload'
+                    
+    return status_map
 
 if __name__ == "__main__":
     init_db()
