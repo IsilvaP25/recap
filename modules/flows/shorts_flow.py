@@ -65,6 +65,10 @@ def iniciar_flujo(apagar_al_final=False):
             break
  
 def iniciar_regeneracion_emergencia_ollama(mangas_disponibles):
+    use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
+    if not use_ollama:
+        print("\n[INFO] Ollama está deshabilitado. Omitiendo regeneración de emergencia.")
+        return
     print("\n--- EMERGENCIAS OLLAMA: GENERAR TODO LO FALTANTE ---")
     base_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     regenerados = 0
@@ -172,18 +176,22 @@ def iniciar_generacion_guiones(mangas_disponibles, pdf_base):
                         ["modules/gemini/metadata_generator.py", "--manga", manga, "--short"]
                     )
                     if meta_ok:
-                        # 4. Generar reescritura y metadatos con Ollama
-                        run_pipeline_step(
-                            f"Reescritura Ollama {manga}",
-                            [
-                                "modules/ollama/ollama_rewriter.py",
-                                "--script-path", f"outputs/{manga}/Scripts/Short_guion_ESP.txt",
-                                "--output-script", f"outputs/{manga}/Scripts/Short_guion_OLLAMA.txt",
-                                "--output-meta", f"outputs/{manga}/Scripts/short_youtube_data_OLLAMA.json",
-                                "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json",
-                                "--manga", manga
-                            ]
-                        )
+                        use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
+                        if use_ollama:
+                            # 4. Generar reescritura y metadatos con Ollama
+                            run_pipeline_step(
+                                f"Reescritura Ollama {manga}",
+                                [
+                                    "modules/ollama/ollama_rewriter.py",
+                                    "--script-path", f"outputs/{manga}/Scripts/Short_guion_ESP.txt",
+                                    "--output-script", f"outputs/{manga}/Scripts/Short_guion_OLLAMA.txt",
+                                    "--output-meta", f"outputs/{manga}/Scripts/short_youtube_data_OLLAMA.json",
+                                    "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json",
+                                    "--manga", manga
+                                ]
+                            )
+                        else:
+                            print(f"  [INFO] Ollama deshabilitado. Omitiendo reescritura para {manga}.")
                 else:
                     print(f"  [AVISO] Falló la traducción para {manga}.")
             else:
@@ -195,11 +203,13 @@ def iniciar_generacion_guiones(mangas_disponibles, pdf_base):
 def iniciar_generacion_videos(mangas_disponibles, pdf_base):
     print("\n--- GENERAR AUDIO Y VIDEO SHORT ---")
     
+    use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
     mangas_sin_video = []
     for manga in mangas_disponibles:
         content, _ = db_manager.get_short_script(manga)
         if content:  # Debe tener guión en base de datos
-            if not db_manager.is_both_short_videos_created(manga):
+            video_created = db_manager.is_both_short_videos_created(manga) if use_ollama else db_manager.is_short_video_created(manga)
+            if not video_created:
                 mangas_sin_video.append(manga)
                 
     if not mangas_sin_video:
@@ -245,7 +255,7 @@ def iniciar_generacion_videos(mangas_disponibles, pdf_base):
             print(f"  [AVISO] No se encontró PDF para {manga}. Saltando...")
             continue
             
-        print(f"\n>>> GENERANDO MULTIMEDIA SHORTS (GEMINI + OLLAMA) PARA: {manga.replace('_', ' ')}")
+        print(f"\n>>> GENERANDO MULTIMEDIA SHORTS PARA: {manga.replace('_', ' ')}")
         
         # 1. Generar audio para Gemini
         audio_ok = run_pipeline_step(
@@ -253,11 +263,13 @@ def iniciar_generacion_videos(mangas_disponibles, pdf_base):
             ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short"]
         )
         
-        # 2. Generar audio para Ollama
-        audio_ollama_ok = run_pipeline_step(
-            f"Audio Short Ollama {manga}",
-            ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
-        )
+        # 2. Generar audio para Ollama (opcional)
+        audio_ollama_ok = True
+        if use_ollama:
+            audio_ollama_ok = run_pipeline_step(
+                f"Audio Short Ollama {manga}",
+                ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
+            )
         
         if audio_ok and audio_ollama_ok:
             # 3. Ensamblar video Gemini
@@ -265,15 +277,18 @@ def iniciar_generacion_videos(mangas_disponibles, pdf_base):
                 f"Video Short Gemini {manga}",
                 ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
             )
-            # 4. Ensamblar video Ollama
-            video_ollama_ok = run_pipeline_step(
-                f"Video Short Ollama {manga}",
-                ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
-            )
+            # 4. Ensamblar video Ollama (opcional)
+            video_ollama_ok = True
+            if use_ollama:
+                video_ollama_ok = run_pipeline_step(
+                    f"Video Short Ollama {manga}",
+                    ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
+                )
             
             if video_ok and video_ollama_ok:
-                db_manager.mark_short_video_created(manga, 2)
-                print(f"  [OK] Ambos Shorts (Gemini y Ollama) de {manga} registrados como creados en la base de datos.")
+                db_manager.mark_short_video_created(manga, 2 if use_ollama else 1)
+                msg_val = "Ambos Shorts (Gemini y Ollama)" if use_ollama else "Short Gemini"
+                print(f"  [OK] {msg_val} de {manga} registrado(s) como creado(s) en la base de datos.")
             else:
                 print(f"  [ERROR] Falló la generación de alguno de los videos para {manga}.")
         else:
@@ -837,18 +852,22 @@ def iniciar_produccion_automatica(mangas_disponibles, pdf_base):
                             ["modules/gemini/metadata_generator.py", "--manga", manga, "--short"]
                         )
                         if meta_ok:
-                            # Generar reescritura y metadatos con Ollama
-                            run_pipeline_step(
-                                f"Reescritura Ollama {manga}",
-                                [
-                                    "modules/ollama/ollama_rewriter.py",
-                                    "--script-path", f"outputs/{manga}/Scripts/Short_guion_ESP.txt",
-                                    "--output-script", f"outputs/{manga}/Scripts/Short_guion_OLLAMA.txt",
-                                    "--output-meta", f"outputs/{manga}/Scripts/short_youtube_data_OLLAMA.json",
-                                    "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json",
-                                    "--manga", manga
-                                ]
-                            )
+                            use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
+                            if use_ollama:
+                                # Generar reescritura y metadatos con Ollama
+                                run_pipeline_step(
+                                    f"Reescritura Ollama {manga}",
+                                    [
+                                        "modules/ollama/ollama_rewriter.py",
+                                        "--script-path", f"outputs/{manga}/Scripts/Short_guion_ESP.txt",
+                                        "--output-script", f"outputs/{manga}/Scripts/Short_guion_OLLAMA.txt",
+                                        "--output-meta", f"outputs/{manga}/Scripts/short_youtube_data_OLLAMA.json",
+                                        "--gemini-meta", f"outputs/{manga}/Scripts/short_youtube_data.json",
+                                        "--manga", manga
+                                    ]
+                                )
+                            else:
+                                print(f"  [INFO] Ollama deshabilitado. Omitiendo reescritura para {manga}.")
                     else:
                         print(f"  [ERROR] Falló la traducción para {manga}.")
                         script_ok = False
@@ -862,31 +881,39 @@ def iniciar_produccion_automatica(mangas_disponibles, pdf_base):
                 continue
     
             # --- PASO 2: AUDIO Y VIDEO ---
-            video_ok = db_manager.is_both_short_videos_created(manga)
+            use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
+            video_ok = db_manager.is_both_short_videos_created(manga) if use_ollama else db_manager.is_short_video_created(manga)
             if not video_ok:
-                print(f"\n[PIPELINE - PASO 2] Generando multimedia (audio y video) para Gemini y Ollama...")
+                print(f"\n[PIPELINE - PASO 2] Generando multimedia (audio y video) para Gemini...")
                 audio_ok = run_pipeline_step(
                     f"Audio Short Gemini {manga}",
                     ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short"]
                 )
-                audio_ollama_ok = run_pipeline_step(
-                    f"Audio Short Ollama {manga}",
-                    ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
-                )
+                
+                audio_ollama_ok = True
+                if use_ollama:
+                    audio_ollama_ok = run_pipeline_step(
+                        f"Audio Short Ollama {manga}",
+                        ["modules/audio/audio_generator.py", "--manga", manga, "--chapter", "1", "--mode", "short", "--suffix", "OLLAMA"]
+                    )
                 
                 if audio_ok and audio_ollama_ok:
                     video_ok = run_pipeline_step(
                         f"Video Short Gemini {manga}",
                         ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short"]
                     )
-                    video_ollama_ok = run_pipeline_step(
-                        f"Video Short Ollama {manga}",
-                        ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
-                    )
+                    
+                    video_ollama_ok = True
+                    if use_ollama:
+                        video_ollama_ok = run_pipeline_step(
+                            f"Video Short Ollama {manga}",
+                            ["modules/video/video_assembler.py", "--manga", manga, "--chapter", "1", "--pdf", pdf_path, "--mode", "short", "--suffix", "OLLAMA"]
+                        )
                     
                     if video_ok and video_ollama_ok:
-                        db_manager.mark_short_video_created(manga, 2)
-                        print(f"  [OK] Ambos Shorts (Gemini y Ollama) de {manga} registrados como creados en la base de datos.")
+                        db_manager.mark_short_video_created(manga, 2 if use_ollama else 1)
+                        msg_val = "Ambos Shorts (Gemini y Ollama)" if use_ollama else "Short Gemini"
+                        print(f"  [OK] {msg_val} de {manga} registrado(s) como creado(s) en la base de datos.")
                         video_ok = True
                     else:
                         print(f"  [ERROR] Falló la generación de alguno de los videos para {manga}.")
@@ -1329,6 +1356,10 @@ def iniciar_limpieza_duplicados():
     print("\n=== PROCESO DE LIMPIEZA COMPLETADO ===")
 
 def iniciar_completado_ollama_pendiente(mangas_disponibles, pdf_base):
+    use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
+    if not use_ollama:
+        print("\n[INFO] Ollama está deshabilitado. No hay subidas de Ollama pendientes por completar.")
+        return
     print("\n" + "="*50)
     print("   --- COMPLETAR VIDEOS Y SUBIDAS DE OLLAMA PENDIENTES ---")
     print("="*50)
@@ -1706,6 +1737,10 @@ def asegurar_video_ollama(manga, base_proj, pdf_path):
     return video_ok
 
 def iniciar_reprogramacion_y_relleno_shorts(mangas_disponibles, pdf_base):
+    use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
+    if not use_ollama:
+        print("\n[INFO] Ollama está deshabilitado. La reprogramación y relleno de slots con backlog requiere Ollama.")
+        return
     print("\n" + "="*50)
     print("   --- REPROGRAMACIÓN Y RELLENO DE SHORTS (8:00 PM) ---")
     print("="*50)

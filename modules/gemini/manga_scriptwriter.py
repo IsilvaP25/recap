@@ -626,9 +626,9 @@ def generate_historical_summary(manga_name, chapter_num):
         print("  [ERROR] No text found for history.")
         return
     
-    current_history, _ = db_manager.get_story_history(manga_name)
+    current_history, _, _ = db_manager.get_story_history(manga_name)
     
-    model = genai.GenerativeModel("gemini-flash-latest", generation_config=GENERATION_CONFIG)
+    model = genai.GenerativeModel("gemini-2.5-flash-lite", generation_config=GENERATION_CONFIG)
     prompt = f"""
     Current Story History: {current_history if current_history else "No history yet."}
     

@@ -25,7 +25,8 @@ def menu_principal():
     print("5. MODO SHORTS")
     print("6. Revisar Cuotas y Estado")
     print("7. LIMPIAR VIDEOS DUPLICADOS EN YOUTUBE (AUTOMÁTICO)")
-    print("8. Salir")
+    print("8. SINCRONIZAR MEMORIA VECTORIAL (Mangas antiguos)")
+    print("9. Salir")
     return input("\nSelecciona una opción: ")
 
 def main():
@@ -85,6 +86,9 @@ def main():
             shorts_flow.iniciar_limpieza_duplicados()
             proceso_completado = True
         elif op == "8":
+            import subprocess
+            subprocess.run([sys.executable, "scripts/backfill_chromadb.py"])
+        elif op == "9":
             print("Saliendo...")
             break
 

@@ -580,7 +580,8 @@ def get_video_status(manga, type_val='short', chapter_or_part='1'):
         if ai not in deleted_map or status == 'pending_repair':
             deleted_map[ai] = {'youtube_id': yid, 'status': status}
             
-    providers = ['gemini', 'ollama'] if type_val == 'short' else ['gemini']
+    use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
+    providers = ['gemini', 'ollama'] if (type_val == 'short' and use_ollama) else ['gemini']
     status_map = {}
     
     for provider in providers:
